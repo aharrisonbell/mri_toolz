@@ -1,0 +1,372 @@
+#!/bin/tcsh
+# set verbose # For Debugging Purposes
+# @MEMRIScript (aka @MakeAwesomeBrain)
+# by AHB, 
+set version = 2.30-01-2013
+# Script to process manganese enhanced scans (for Caret, FreeSurfer, etc.)
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+
+####################################################################################################
+#       SET UP ANALYSIS HERE (This is specific for each analysis
+#
+# Directories
+set baseline_sessions = "MI00178 MI00186"
+set expt_sessions = "MI00207 MI00209" # "MI00169 MI00170 MI00172"
+set all_sessions = "MI00178" # only need to list new sessions here...
+set NORMALISE_OPTION = "Y"
+####################################################################################################
+# SET UP VARIABLES HERE (Don't fuck with these unless you know what you're doing!!)*
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+#set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+# incoming data labels (the script identifies input data by searching for these threads)
+set mpHR_label = _mprage05mmFOV2561001
+set mpLR_label = _mprage1mmnoIRFOV2561001
+# BET Variables (affects skull-stripping.  Play around with these values if you are having problems)
+set betF = 0.5 # Suggested value: 0.5
+set betG = 0.1 # Suggested values: 0.1, 0.2
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+# Program Options
+set REV_OPTION = "Y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "************************************"
+	echo "@MEMRIScript by AHB, V."$version
+	echo "************************************"
+	echo " "
+	echo "Script for processing manganese-enhanced MRI data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, etc.  If the script doesn't work, try altering the"
+	echo " default values (edit this script)."
+	echo " "
+	echo "INPUT: @@MEMRIScript <ANALYSIS_NAME> <METHOD> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " ANALYSIS_NAME = Label for full analysis.  This has no impact on the program,"
+	echo "           it simply labels the data in the directory."
+	echo " METHOD = Type of analysis to run:"
+	echo "       (1) Standard MPRAGE sequences"
+	echo "       (2) Simmons GRE sequences"
+	echo "       (3) TI500-corrected MPRAGE sequences"
+	echo "       (4) TI800-corrected MPRAGE sequences"
+	echo " "
+	echo " STEP (optional): perform step X where..."
+	echo "   Preprocessing steps (done on all sessions)"
+	echo "   1) Merge High-Res Volumes"
+	echo "   2) Correct Orientation"
+	echo "   3) Skull Stripping (be sure to manually fix mask)"
+	echo "   4) Align and divide by noIR dataset (for MPRAGE only)"
+	echo " "
+	echo "Note: Default is to perform all steps (leave STEP blank).  Otherwise, run each step one"
+	echo "      at a time."
+	goto exit
+endif
+
+
+
+-base # baseline sessions
+-expt # experimental sessions
+-method # method
+-step # step
+-
+
+
+#
+#while ($#argv > 0)
+#    switch ($argv[1])
+#        case -label|-l: 
+#            shift
+#            set session_name=$argv[1]
+#            breaksw
+#        case -lr: 
+#            shift
+#            set mpLR_label=$argv[1]
+#	     breaksw
+#        case -hr: 
+#            shift
+#            set mpHR_label=$argv[1]
+#            breaksw
+#        case -s|-step: 
+#            set step=$argv[1]
+#            shift
+#           breaksw
+#        case -r|-ref: 
+#            shift
+#            set ref_volume=$argv[1]
+#            breaksw
+#        default:
+#                shift
+#        endif
+#                echo Unknown parameter $argv[1]
+#    endsw
+#    shift
+#end
+
+
+
+
+set analysis_name = $1
+set method = $2
+if ($#argv < 3) then
+	set step = 0
+else
+	set step = $3
+endif
+if ($#argv < 2) then
+	echo "You must specify a sequence/method:"
+	echo "   1) Standard MPRAGE"
+	echo "   2) NIH Gradient Echo"
+	echo "   3) TI-corrected MPRAGE TI=500"
+	echo "   4) TI-corrected MPRAGE TI=800"
+	goto exit
+endif
+
+# METHOD:
+if ($method == 1) then
+	set method_label = "std_mprage"
+	set data_in_label = "_mprage05mmFOV2561001"
+	set data_out_label = "hrMn" # greMn or hrMn or hr_TI_Mn
+	set mpLR_label = _mprage1mmnoIRFOV2561001 
+endif
+if ($method == 2) then
+	set method_label = "gradient_echo"
+	set data_in_label = "_gre3D05x05x05"
+	set data_out_label = "greMn"
+endif
+if ($method == 3) then
+	set method_label = "TI500_mprage"
+	set data_in_label = "_mprage05mmFOV256TI500"
+	set data_out_label = "hr_TI500_Mn"
+	set mpLR_label = _mprage1mmnoIRFOV256TI500
+endif
+if ($method == 4) then
+	set method_label = "TI800_mprage"
+	set data_in_label = "_mprage05mmFOV256TI800"
+	set data_out_label = "hr_TI800_Mn"
+	set mpLR_label = _mprage1mmnoIRFOV256TI800
+endif
+
+mkdir -p $PWD/$analysis_name $PWD/$analysis_name/preprocessed_data
+set analysis_dir = $PWD/$analysis_name
+echo " "
+echo "************************************"
+echo "@@MEMRIScript by AHB, V."$version
+echo "************************************"
+echo " "
+echo "Method: "$method_label
+echo "Normalise volumes?: "$NORMALISE_OPTION
+echo " "
+
+################################################
+# Part 1 - Preprocessing of all sessions' data #
+################################################
+
+if ($step < 5 || $step > 6) then
+	foreach session_name ($all_sessions)
+		echo " " 
+		echo "Analysing "$session_name
+		# Set up directories for each session
+		cd ${session_name}*
+		set session_dir = $PWD
+		set nii_dir = $PWD/nii_files
+		set out_dir = $PWD/memri
+		set temp_dir = $PWD/temp
+		set LRvolume = `ls ${nii_dir}/*${mpLR_label}*.nii*`
+		mkdir -p $out_dir $temp_dir
+
+		# Step 1: Merge MPRAGEs and/or GREs into one volume
+		# This step now FLIRTs each volume to the first
+		if ($step =~ *1* || $step == 0) then
+			date
+			echo "Step 1: Merge data into one volume after flirting"
+			cd $nii_dir
+			set template = "" 
+			set counter = 1 # this counter ensures the proper command line is generated
+			foreach fn (`ls *$data_in_label*nii*`) 
+				echo "...Merging "$fn
+				if ($counter == 1) then
+					set template = "$fn"
+					set basevolume = "$fn"
+				else
+					echo "......aligning "$fn
+					flirt -in $fn -dof 6 -ref $basevolume -out $temp_dir/temp_data${counter}
+					set template = "$template -add ${temp_dir}/temp_data${counter}"
+				endif
+				@ counter ++
+			end
+			set com_line = "fslmaths $template $temp_dir/${session_name}_${data_out_label}_1Mg"
+			$com_line
+			echo "...Merged file created in "$temp_dir
+			if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+				fslview $temp_dir/${session_name}_${data_out_label}_1Mg.nii* &
+			endif
+			echo "Step 1: Done".
+			# cat ${session_name}_memriscript_part1 | mail -s "@@MEMRIScript part 1 done" ${email}
+		endif
+
+		# Step 2: Correct orientation of all files
+		if ($step =~ *2* || $step == 0) then
+			date
+			echo "Step 2: Correcting orientation..." 
+			fslswapdim $temp_dir/${session_name}_${data_out_label}_1Mg.nii.gz x z y $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz
+			fslorient -deleteorient $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz 
+			fslorient -setqformcode 1 $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz 
+			if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+				fslview $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz &
+			endif
+			echo "Step 2: Done.  Be sure to confirm the labels are correct and the capsule appears on the LEFT side"
+			# cat ${session_name}_memriscript_part2 | mail -s "@@MEMRIScript part 2 done" ${email}
+		endif
+		
+		# Step 3: Skull Stripping
+		if ($step =~ *3* || $step == 0) then
+			date
+			echo "Step 3: Skull-stripping merged high-res volume..."
+			bet $out_dir/${session_name}_${data_out_label}_2MgFx $out_dir/${session_name}_${data_out_label}_3MgFxBs -f $betF -g $betG
+			# Create mask from stripped volume
+			fslmaths $out_dir/${session_name}_${data_out_label}_3MgFxBs.nii.gz -bin -s 2 -thr 0.5 -bin $out_dir/${session_name}_${data_out_label}_anatmask_rough
+			echo "...Stripped volume and mask created in "$out_dir
+			echo "...Be sure to check output."
+			if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+				fslview $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz $out_dir/${session_name}_${data_out_label}_3MgFxBs.nii.gz $out_dir/${session_name}_${data_out_label}_anatmask_rough.nii.gz &
+			endif
+			echo "Step 3: Done."
+			echo "You must now manually fix the mask - and rename it: 'session_name'_anatmask_fix.nii.gz   e.g., MI00100_anatmask_fix.nii.gz"
+			#cat ${session_name}_memriscript_part3 | mail -s "@@MEMRIScript part 3 done" ${email}
+		endif
+		
+		if ($step =~ *4* || $step == 0) then
+			if ($method_label =~ *mprage*) then
+				# Step 4: Additional steps for mprage-based sequences
+				echo "Performing additional analysis steps for MPRAGE sequences (dividing by noInversion sequence)"
+				echo "Step 4.1: Correcting orientation of noInversion data..."	
+				echo $LRvolume
+				fslswapdim $LRvolume x z y $out_dir/${session_name}_${data_out_label}noIR_1Fx.nii.gz
+				fslorient -deleteorient $out_dir/${session_name}_${data_out_label}noIR_1Fx.nii.gz 
+				fslorient -setqformcode 1 $out_dir/${session_name}_${data_out_label}noIR_1Fx.nii.gz 
+				echo "Step 4.2: Using FLIRT to align low-res volume to merged high-res volume..."
+				flirt -in $out_dir/${session_name}_${data_out_label}noIR_1Fx.nii.gz -ref $out_dir/${session_name}_${data_out_label}_2MgFx.nii.gz -dof 6 -out $out_dir/${session_name}_${data_out_label}noIR_4FxAl
+				echo "Step 4.3: Dividing high-res merged volume by low-res volume and mask..." 
+				fslmaths $out_dir/${session_name}_${data_out_label}_2MgFx -div $out_dir/${session_name}_${data_out_label}noIR_4FxAl $temp_dir/${session_name}_${data_out_label}_HRcorr -odt float
+				fslmaths $temp_dir/${session_name}_${data_out_label}_HRcorr -mas $out_dir/${session_name}_${data_out_label}_anatmask_fix $out_dir/${session_name}_${data_out_label}_StrippedAnat_native
+
+				cp $out_dir/${session_name}_${data_out_label}_StrippedAnat_native.nii.gz $analysis_dir/preprocessed_data
+				if ($REV_OPTION == "y"||$REV_OPTION == "Y") then
+					fslview $out_dir/${session_name}_${data_out_label}_2MgFx.nii* \
+					$out_dir/${session_name}_${data_out_label}noIR_4FxAl.nii* \
+					$out_dir/${session_name}_${data_out_label}_anatmask_fix.nii* \
+					$out_dir/${session_name}_${data_out_label}_StrippedAnat_native.nii.gz &
+				endif
+			else
+				echo "Step 4: Masking volume with fixed mask"
+				fslmaths $out_dir/${session_name}_${data_out_label}_2MgFx -mas $out_dir/${session_name}_${data_out_label}_anatmask_fix $out_dir/${session_name}_${data_out_label}_StrippedAnat_native
+				cp $out_dir/${session_name}_${data_out_label}_StrippedAnat_native.nii.gz $analysis_dir/preprocessed_data
+			endif
+		endif
+		cd $session_dir
+		cd ..
+	end
+else
+	goto part2
+endif
+
+################################################
+# Part 2 - Preprocessing of all sessions' data #
+################################################
+part2:
+# Step 5 - Align all data to common reference frame (first Baseline Scan)
+if ($step =~ *5* || $step == 0) then
+	cd ${analysis_dir}/preprocessed_data
+	echo "Step 5: Merge all baseline scans into one volume (after flirting)"
+	set template = "" 
+	set counter = 1 # this counter ensures the proper command line is generated
+	foreach session_name ($baseline_sessions)
+		#cp $out_dir/${session_name}_${data_out_label}_StrippedAnat_native.nii.gz $analysis_dir/preprocessed_data
+		set fn = ${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+		echo "...Merging "$fn
+		if ($counter == 1) then
+			set template = "$fn"
+			set basevolume = "$fn"
+		else
+			echo "......aligning "$fn
+			flirt -in $fn -ref $basevolume -out $temp_dir/temp_data${counter}
+			set template = "$template -add ${temp_dir}/temp_data${counter}"
+		endif
+		@ counter ++
+	end
+
+	if (counter == 2) then
+		cp $fn $analysis_dir/${analysis_name}_${data_out_label}_mergedBaseline.nii.gz	
+	else
+		set com_line = "fslmaths $template $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines"
+		$com_line
+	endif
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii* &
+	endif
+	# cat ${session_name}_memriscript_part1 | mail -s "@@MEMRIScript part 1 done" ${email}
+endif
+
+if ($step =~ *6* || $step == 0) then
+	cd ${analysis_dir}
+	set mean = `fslstats $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz -M`
+	set minmax = `fslstats $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz -R`
+	fslmaths $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz -div $mean $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines_normalised
+	set timepoint = 1
+	cd ${analysis_dir}/preprocessed_data
+	foreach session_name ($expt_sessions)
+		echo " "
+		if ($NORMALISE_OPTION == "Y") then
+			set fn = ${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			echo "Step 6.1: Aligning "${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			flirt -in $fn -ref $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines_normalised.nii.gz -datatype float -out $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}
+			
+			echo "Step 6.2: Normalising "${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			set mean = `fslstats $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}.nii.gz -M`
+			set minmax = `fslstats $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz -R`
+			fslmaths $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}.nii.gz -div $mean $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}_normalised -odt float 
+			
+			echo "Step 6.3: Subtracting baseline from "${analysis_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			fslmaths $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}_normalised.nii.gz -sub $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines_normalised.nii.gz \
+			$analysis_dir/${analysis_name}_${data_out_label}_Subtraction${timepoint}_normalised -odt float
+			if ($timepoint > 1) then # subtract from each successive timepoints
+				echo "...subtract sessions"
+				set previous_tp = $timepoint
+				@ previous_tp --
+				fslmaths $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}_normalised.nii.gz -sub $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${previous_tp}_normalised.nii.gz \
+				$analysis_dir/${analysis_name}_${data_out_label}_Subtraction${timepoint}-${previous_tp}_normalised -odt float 
+			endif
+			@ timepoint ++	
+		else
+			set fn = ${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			echo "Step 6.1: Aligning "${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			flirt -in $fn -ref $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz -out $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}
+			echo "Step 6.2: Subtracting baseline from "${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+			fslmaths $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}.nii.gz -sub $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines.nii.gz \
+			$analysis_dir/${analysis_name}_${data_out_label}_Subtraction${timepoint} -odt float 
+			if ($timepoint > 1) then # subtract from each successive timepoints
+				echo "...subtract sessions"
+				set previous_tp = $timepoint
+				@ previous_tp --
+				fslmaths $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${timepoint}.nii.gz -sub $analysis_dir/${analysis_name}_${data_out_label}_InjectionSession${previous_tp}.nii.gz \
+				$analysis_dir/${analysis_name}_${data_out_label}_Subtraction${timepoint}-${previous_tp} -odt float 
+			endif
+			@ timepoint ++	
+		endif
+	end
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $analysis_dir/${analysis_name}_${data_out_label}_mergedBaselines*.nii* \
+		$analysis_dir/${analysis_name}_${data_out_label}_InjectionSession*.nii* \
+		$analysis_dir/${analysis_name}_${data_out_label}_Subtraction*.nii* &
+	endif
+endif
+
+exit:

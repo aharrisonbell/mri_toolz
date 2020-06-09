@@ -1,0 +1,108 @@
+#!/bin/sh
+#   tbss_monkey_3_postreg - post-registration processing
+#	later ruined by Andrew Bell
+
+Usage() {
+    cat <<EOF
+
+Usage: tbss_3_postreg [options]
+
+Choose ONE of:
+ -S   : derive mean_FA and mean_FA_skeleton from mean of all subjects in study (recommended)
+ -T   : use FMRIB58_FA and its skeleton instead of study-derived mean and skeleton
+
+EOF
+    exit 1
+}
+
+[ "$1" = "" ] && Usage
+
+if [ $1 = -S ] ; then
+    SKELETON=0
+elif [ $1 = -T ] ; then
+    SKELETON=1
+else
+    Usage
+fi
+
+echo [`date`] [`hostname`] [`uname -a`] [`pwd`] [$0 $@] >> .tbsslog
+
+/bin/rm -f all.msf
+
+if [ `${FSLDIR}/bin/imtest target` = 1 ] ; then
+    echo "using pre-chosen target for registration"
+    best=target
+else
+    echo "finding best target"
+
+    n=`$FSLDIR/bin/imglob *_FA.nii* *_FA.img* *_FA.hdr* | wc -w`
+
+    for f in `$FSLDIR/bin/imglob *_FA.nii* *_FA.img* *_FA.hdr*` ; do
+
+	meanscore=0
+	medianscore=0
+
+	for g in `$FSLDIR/bin/imglob *_FA.nii* *_FA.img* *_FA.hdr*` ; do
+	
+	    thismeanscore=`cat ${g}_to_${f}_warp.msf | awk '{print $1}'`
+	    thismedianscore=`cat ${g}_to_${f}_warp.msf | awk '{print $2}'`
+
+	    meanscore=`echo "10 k $meanscore $thismeanscore + p" | dc -`
+	    medianscore=`echo "10 k $medianscore $thismedianscore + p" | dc -`
+	done
+
+	meanscore=`echo "10 k $meanscore $n / p" | dc -`
+	medianscore=`echo "10 k $medianscore $n / p" | dc -`
+
+	echo "$f $meanscore $medianscore"
+	echo "$f $meanscore $medianscore" >> all.msf
+
+    done
+
+    best=`cat all.msf | sort -k 2 -n | head -n 1 | awk '{print $1}'`
+    echo "best target is $best - now registering this to standard space"
+
+    $FSLDIR/bin/imcp $best target
+fi
+
+echo $best > best.msf
+
+mkdir -p ../stats
+
+echo "affine-registering target to CARET BRAIN space"
+$FSLDIR/bin/fslmaths target -bin target_mask
+$FSLDIR/bin/flirt -in target -inweight target_mask -ref $FSLDIR/data/standard/caretbrain.nii.gz -omat target_to_caret.mat -out target_to_caret
+
+echo "transforming (and upsampling) all FA images into CARET BRAIN space"
+for f in `$FSLDIR/bin/imglob *_FA.nii* *_FA.img* *_FA.hdr*` ; do
+echo $f
+$FSLDIR/bin/applywarp -i $f -o ${f}_to_target -r $FSLDIR/data/standard/caretbrain.nii.gz -w ${f}_to_${best}_warp --postmat=target_to_caret.mat
+done
+
+
+
+echo "merging all upsampled FA images into single 4D image"
+${FSLDIR}/bin/fslmerge -t ../stats/all_FA `$FSLDIR/bin/imglob *_FA_to_target.*`
+cd ../stats
+
+# create mean FA
+echo "creating valid mask and mean FA"
+$FSLDIR/bin/fslmaths all_FA -max 0 -Tmin -bin mean_FA_mask -odt char
+$FSLDIR/bin/fslmaths all_FA -mas mean_FA_mask all_FA
+$FSLDIR/bin/fslmaths all_FA -Tmean mean_FA
+
+# create skeleton
+if [ $SKELETON = 0 ] ; then
+    echo "skeletonising mean FA"
+    $FSLDIR/bin/tbss_skeleton -i mean_FA -o mean_FA_skeleton
+else
+    $FSLDIR/bin/fslmaths $FSLDIR/data/standard/caretbrain.nii.gz -mas mean_FA_mask mean_FA
+    $FSLDIR/bin/fslmaths mean_FA -bin mean_FA_mask
+    $FSLDIR/bin/fslmaths all_FA -mas mean_FA_mask all_FA
+    $FSLDIR/bin/imcp $FSLDIR/data/standard/FMRIB58_FA-skeleton_1mm mean_FA_skeleton
+fi
+
+echo "now view mean_FA_skeleton to check whether the default threshold of 0.2 needs changing, when running:"
+echo "tbss_4_prestats <threshold>"
+cd ../stats
+fslview all_FA -b 0,0.8 mean_FA_skeleton -b 0.2,0.8 -l Green &

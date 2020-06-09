@@ -1,0 +1,65 @@
+#!/bin/sh
+
+#   tbss_monkey_2_reg - TBSS nonlinear registration
+#
+#   Stephen Smith, FMRIB Image Analysis Group
+#	Later modified and ruined by Andrew Bell, Oxford
+
+Usage() {
+    cat <<EOF
+
+Usage: tbss_monkey_2_reg [options]
+
+Target-selection options - choose ONE of:
+ -t <target>   : use <target> image as target for nonlinear registrations
+ -n            : find best target from all images in FA
+
+EOF
+    exit 1
+}
+
+do_reg(){
+
+    f=$1
+
+    for g in `$FSLDIR/bin/imglob *_FA.*` ; do
+        	
+	o=${g}_to_$f
+	
+	if [ ! -f ${o}_warp.msf ] ; then
+	    echo $o
+	    touch ${o}_warp.msf
+	    echo "$FSLDIR/bin/fsl_reg $g $f ${g}_to_$f -e -FA" >> commands
+	fi
+	
+    done
+}
+
+[ "$1" = "" ] && Usage
+
+echo [`date`] [`hostname`] [`uname -a`] [`pwd`] [$0 $@] >> tbsslog
+
+/bin/rm -f FA/commands
+
+if [ $1 = -n ] ; then
+    for f in `$FSLDIR/bin/imglob *_FA.*` ; do
+	do_reg $f
+    done
+else
+    if [ $1 = -T ] ; then
+		TARGET=$FSLDIR/data/standard/FMRIB58_FA_1mm
+    elif [ $1 = -t ] ; then
+			TARGET=$2
+    else
+		Usage
+    fi
+	if [ `${FSLDIR}/bin/imtest $TARGET` = 0 ] ; then
+		echo ""
+		echo "Error: target image $TARGET not valid"
+		Usage
+    fi
+    $FSLDIR/bin/imcp $TARGET target
+    do_reg target
+fi
+
+${FSLDIR}/bin/fsl_sub -l tbss_logs -T 60 -N tbss_2_reg -t commands

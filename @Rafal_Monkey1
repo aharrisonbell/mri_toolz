@@ -1,0 +1,395 @@
+#!/bin/tcsh
+# @Rafal_Monkey1 (Run Tracts)
+# by AHB, started May 2013
+set version = 1.10-07-2013
+# Script to process and segment DTI data collected at BSB
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+# This script also assumes the data have been collected in a certain way (e.g., B0 fields at beginning
+# of each run, 60 dirs split into 3 files + 8 dir, alternating phase-encoding dirs, etc.).  If your
+# data have been collected in a different way, you may have to change the script.
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set home_dir = $PWD
+set nii_dir = $PWD/nii_files
+set out_dir = $PWD/DTI_SC
+set dti_dir = $PWD/DTI_data
+set anat_dir = $PWD/structurals
+set temp_dir = $PWD/temp
+set mask_dir = $out_dir/masks_structspace
+set scriptdir = ~/Documents/fMRI_Data/scripts # specifies location of TOPUP, etc.
+#set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+#
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/OxfordData/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/OxfordData/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+set mni_dir = ~/Documents/fMRI_Data/OxfordData/mni_brain/
+set caret_dir = ~/Documents/fMRI_Data/OxfordData/caret_brain
+#set mni_dir = /imaging/ab03/mni_brain/
+#set caret_dir = /imaging/ab03/caret_brain/
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set DTI_label = DTImosaicb100010mm
+set PE_axis = 2 # (x,y,z) = (LR/parallel to B0/up-down) therefore in monkey space = (LR/IS/PA)
+set thr = 0.5 # threshold for masks
+#
+# Program Options
+set REV_OPTION = "y" # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*******************************"
+	echo "@Rafal_Monkey1 by AHB, V"$version
+	echo "*******************************"
+	echo " "
+	echo "Script for processing DTI data for the DTI SC-amygdala project (Rafal et al.)"
+	echo "This script assumes the data have been run through @DTIScript  until at least step 8 (Bedpostx)"
+	echo "This script is also specific for NHP data"
+	echo "This is PART 1 - Running Probtractx"
+	echo " "
+	echo "INPUT: @Rafal_Monkey1 <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data"
+	echo " "
+	echo " step (optional): perform step X where..."
+	echo "   1) Align structurals and masks to DTI data"
+	echo "   2) Run standard tracts"
+	echo "   3) Run non-standard tracts"
+	
+	echo " "
+	goto exit
+endif
+
+set session_name = $1
+if ($#argv == 1) then
+	set step = 0
+else
+	set step = $2
+endif
+mkdir -p $out_dir $temp_dir
+mkdir -p $nii_dir/temp
+mkdir -p $out_dir/masks_diffspace $out_dir/masks_diffspace/unthr
+
+###################################################################################################
+# Step 1: Align Structural to DTI (and STANDARD ATLASES, etc.)
+# This step is necessary to creat the *struct2dti.mat matrix
+if ($step =~ *1* || $step == 0) then
+	date
+	echo "Step 1: Align structural to DTI..."	
+	flirt -in $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -ref $dti_dir/nodif_brain.nii.gz \
+	-dof 9 -omat $out_dir/${session_name}_struct2dti.mat -out $out_dir/${session_name}_struct2dti
+
+	echo "...Align structural-aligned masks to diffusion space.."
+	cd $mask_dir
+	foreach mask (`ls *.nii*`)
+		set newmask = $mask:r
+		set newnewmask = $newmask:r # need to remove two extensions
+		flirt -in $mask -ref $dti_dir/nodif_brain.nii.gz -applyxfm -init $out_dir/${session_name}_struct2dti.mat -out $out_dir/masks_diffspace/unthr/${newnewmask}_diff_unthr
+		fslmaths $out_dir/masks_diffspace/unthr/${newnewmask}_diff_unthr -thr $thr -bin $out_dir/masks_diffspace/${newnewmask}_diff
+	end
+	cp $out_dir/masks_diffspace/Caret_left_hemisphere_align_diff.nii.gz $out_dir/${session_name}_lefthemi_diff.nii.gz
+	cp $out_dir/masks_diffspace/Caret_right_hemisphere_align_diff.nii.gz $out_dir/${session_name}_righthemi_diff.nii.gz
+	cd $home_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $out_dir/${session_name}_struct2dti.nii.gz $dti_dir/nodif_brain.nii.gz $out_dir/masks_diffspace/*.nii.gz &
+	endif
+	echo "Step 1: Done.  You are now ready to proceed to PROBTRACKX, using *_struct2dti.mat as a translation matrix."
+	echo ${session_name}_DTI_SC_nhp_script_step1 | mail -s "@DTI_SC_nhp step 1 done" ${email}
+endif  
+
+###################################################################################################
+# Step 2: Run Standard Tracts - SC-Pulv-Amyg
+if ($step =~ *2* || $step == 0) then
+	echo "Step 2: Run standard tracts..."
+	echo " "
+	echo "Note: this step requires the following masks: "
+	echo "	${session_name}_SC_diff_corr.nii.gz"
+	echo "	${session_name}_Pulvinar_diff_corr.nii.gz"
+	echo "	${session_name}_Amygdala_diff_corr.nii.gz"
+	#echo "	${session_name}_righthemi_diff.nii.gz"
+	#echo "	${session_name}_lefthemi_diff.nii.gz"
+	echo "	exclusionmask.nii.gz"
+	echo " "
+	convert_xfm -omat $out_dir/${session_name}_dti2struct.mat -inverse $out_dir/${session_name}_struct2dti.mat
+	
+	# Create waypoints.txt file
+	echo `ls $out_dir/${session_name}_Pulvinar_diff_corr.nii.gz` > $out_dir/waypoints_SC-Pul-Amyg.txt 
+	echo `ls $out_dir/${session_name}_Amygdala_diff_corr.nii.gz` >> $out_dir/waypoints_SC-Pul-Amyg.txt 
+#MAIN PATHWAY	
+	# R-SC-Pulv-Amyg
+	set path_dir = R_SC-Pul-Amyg-n3
+	echo "***** Tracing "$path_dir
+	#compile exclusion mask:
+	fslmaths $out_dir/masks_diffspace/${session_name}_lefthemi_diff.nii.gz -add $out_dir/masks_diffspace/exclusionmask_diff.nii.gz -sub \
+	$out_dir/masks_diffspace/${session_name}_righthemi_diff.nii.gz -thr 1 $out_dir/masks_diffspace/TotalExclusionLeftHemi_diff
+	
+	probtrackx2 -V 2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/masks_diffspace/TotalExclusionLeftHemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir \
+	--waypoints=$out_dir/waypoints_SC-Pul-Amyg.txt --waycond=AND
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	rm -f $out_dir/$path_dir/particle[1]*
+	rm -f $out_dir/$path_dir/particle[2]*
+	rm -f $out_dir/$path_dir/particle[3]*
+	rm -f $out_dir/$path_dir/particle[4]*
+	rm -f $out_dir/$path_dir/particle[5]*
+	rm -f $out_dir/$path_dir/particle[6]*
+	rm -f $out_dir/$path_dir/particle[7]*
+	rm -f $out_dir/$path_dir/particle[8]*
+	rm -f $out_dir/$path_dir/particle[9]*
+	rm -f $out_dir/$path_dir/particle[0]*
+	echo " "	
+	
+	# L-SC-Pulv-Amyg
+	set path_dir = L_SC-Pul-Amyg-n3
+	echo "***** Tracing "$path_dir
+	#compile exclusion mask:
+	fslmaths $out_dir/masks_diffspace/${session_name}_righthemi_diff.nii.gz -add $out_dir/masks_diffspace/exclusionmask_diff.nii.gz -sub \
+	$out_dir/masks_diffspace/${session_name}_lefthemi_diff.nii.gz -thr 1 $out_dir/masks_diffspace/TotalExclusionRightHemi_diff
+
+	probtrackx2 -V 2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/masks_diffspace/TotalExclusionRightHemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir \
+	--waypoints=$out_dir/waypoints_SC-Pul-Amyg.txt --waycond=AND
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	rm -f $out_dir/$path_dir/particle[1]*
+	rm -f $out_dir/$path_dir/particle[2]*
+	rm -f $out_dir/$path_dir/particle[3]*
+	rm -f $out_dir/$path_dir/particle[4]*
+	rm -f $out_dir/$path_dir/particle[5]*
+	rm -f $out_dir/$path_dir/particle[6]*
+	rm -f $out_dir/$path_dir/particle[7]*
+	rm -f $out_dir/$path_dir/particle[8]*
+	rm -f $out_dir/$path_dir/particle[9]*
+	rm -f $out_dir/$path_dir/particle[0]*
+	echo " "	
+			
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $out_dir/${session_name}_struct2dti.nii.gz \
+		$out_dir/tract*-n3.nii.gz &
+		fslview $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz \
+		$out_dir/tract*_struct.nii.gz &
+	endif
+	echo "Step 2: Done."
+	echo ${session_name}_DTI_SC_nhp_script_step2 | mail -s "@DTI_SC_nhp step 2 done" ${email}
+	
+endif
+
+###################################################################################################
+# Step 3: Run Standard Tracts - SC-Pulv-Amyg but with a single slice of pulvinar
+if ($step =~ *3* || $step == 0) then
+	echo "Step 3: Run standard tracts..."
+	echo " "
+	echo "Note: this step requires the following masks: "
+	echo "	${session_name}_SC_diff_corr.nii.gz"
+	echo "	${session_name}_Pulvinar_slice_diff_corr.nii.gz"
+	echo "	${session_name}_Amygdala_diff_corr.nii.gz"
+	#echo "	${session_name}_righthemi_diff.nii.gz"
+	#echo "	${session_name}_lefthemi_diff.nii.gz"
+	echo "	exclusionmask.nii.gz"
+	echo " "
+	
+	# Create waypoints.txt file
+	echo `ls $out_dir/${session_name}_Pulvinar_slice_diff_corr.nii.gz` > $out_dir/waypoints_SC-PulSlice-Amyg.txt 
+	echo `ls $out_dir/${session_name}_Amygdala_diff_corr.nii.gz` >> $out_dir/waypoints_SC-PulSlice-Amyg.txt 
+#MAIN PATHWAY	
+	# R-SC-PulvSlice-Amyg
+	set path_dir = R_SC-PulSlice-Amyg-n3
+	echo "***** Tracing "$path_dir
+	#compile exclusion mask:
+	fslmaths $out_dir/masks_diffspace/${session_name}_lefthemi_diff.nii.gz -add $out_dir/masks_diffspace/exclusionmask_diff.nii.gz -sub \
+	$out_dir/masks_diffspace/${session_name}_righthemi_diff.nii.gz -thr 1 $out_dir/masks_diffspace/TotalExclusionLeftHemi_diff
+	
+	probtrackx2 -V 2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/masks_diffspace/TotalExclusionLeftHemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir \
+	--waypoints=$out_dir/waypoints_SC-PulSlice-Amyg.txt --waycond=AND
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	rm -f $out_dir/$path_dir/particle[1]*
+	rm -f $out_dir/$path_dir/particle[2]*
+	rm -f $out_dir/$path_dir/particle[3]*
+	rm -f $out_dir/$path_dir/particle[4]*
+	rm -f $out_dir/$path_dir/particle[5]*
+	rm -f $out_dir/$path_dir/particle[6]*
+	rm -f $out_dir/$path_dir/particle[7]*
+	rm -f $out_dir/$path_dir/particle[8]*
+	rm -f $out_dir/$path_dir/particle[9]*
+	rm -f $out_dir/$path_dir/particle[0]*
+	echo " "		
+	
+	# L-SC-PulvSlice-Amyg
+	set path_dir = L_SC-PulSlice-Amyg-n3
+	echo "***** Tracing "$path_dir
+	#compile exclusion mask:
+	fslmaths $out_dir/masks_diffspace/${session_name}_righthemi_diff.nii.gz -add $out_dir/masks_diffspace/exclusionmask_diff.nii.gz -sub \
+	$out_dir/masks_diffspace/${session_name}_lefthemi_diff.nii.gz -thr 1 $out_dir/masks_diffspace/TotalExclusionRightHemi_diff
+
+	probtrackx2 -V 2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/masks_diffspace/TotalExclusionRightHemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir \
+	--waypoints=$out_dir/waypoints_SC-PulSlice-Amyg.txt --waycond=AND
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	rm -f $out_dir/$path_dir/particle[1]*
+	rm -f $out_dir/$path_dir/particle[2]*
+	rm -f $out_dir/$path_dir/particle[3]*
+	rm -f $out_dir/$path_dir/particle[4]*
+	rm -f $out_dir/$path_dir/particle[5]*
+	rm -f $out_dir/$path_dir/particle[6]*
+	rm -f $out_dir/$path_dir/particle[7]*
+	rm -f $out_dir/$path_dir/particle[8]*
+	rm -f $out_dir/$path_dir/particle[9]*
+	rm -f $out_dir/$path_dir/particle[0]*
+	echo " "	
+			
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $out_dir/${session_name}_struct2dti.nii.gz \
+		$out_dir/tract*-n3.nii.gz &
+		fslview $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz \
+		$out_dir/tract*_struct.nii.gz &
+	endif
+	echo "Step 3: Done."
+	echo ${session_name}_DTI_SC_nhp_script_step2 | mail -s "@DTI_SC_nhp step 3 done" ${email}
+	
+endif
+###################################################################################################
+# Step 4: Run Non-Standard Tracts
+if ($step =~ *4* || $step == 0) then
+	echo "Step 4: Run non-standard tracts..."
+	echo " "
+	echo "Note: this step requires the following masks: "
+	echo "	${session_name}_SC_diff_corr.nii.gz"
+	echo "	${session_name}_Pulvinar_diff_corr.nii.gz"
+	echo "	${session_name}_Amygdala_diff_corr.nii.gz"
+	echo "	${session_name}_righthemi_diff.nii.gz"
+	echo "	${session_name}_lefthemi_diff.nii.gz"
+	echo " "
+	convert_xfm -omat $out_dir/${session_name}_dti2struct.mat -inverse $out_dir/${session_name}_struct2dti.mat
+	
+	# Create waypoints.txt file
+	#echo `ls $out_dir/${session_name}_Amygdala_diff_corr.nii.gz` > $out_dir/waypoints_SC-Amyg.txt 
+	#echo `ls $out_dir/${session_name}_Pulvinar_diff_corr.nii.gz` > $out_dir/waypoints_SC-Pul.txt 
+	#echo `ls $out_dir/${session_name}_Amygdala_diff_corr.nii.gz` > $out_dir/waypoints_Pul-Amyg.txt 
+	
+#SC->Amygdala (no Pulvinar waypoint)	
+	# R-SC-Amyg
+	set path_dir = R_SC-Amyg-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_lefthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "
+	
+	# L-SC-Amyg
+	set path_dir = L_SC-Amyg-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_righthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "	
+	
+#SC->PUL
+	# R-SC-Pulv
+	set path_dir = R_SC-Pul-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_lefthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Pulvinar_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "	
+	
+	# L-SC-Pulv
+	set path_dir = L_SC-Pul-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_SC_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_righthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Pulvinar_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "
+	
+#Pulvinar->Amygdala	
+	# R-Pulv-Amyg
+	set path_dir = R_Pul-Amyg-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_Pulvinar_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_lefthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "	
+	
+	# L-Pulv-Amyg
+	set path_dir = L_Pul-Amyg-n3
+	echo "***** Tracing "$path_dir
+	probtrackx2 -x $out_dir/${session_name}_Pulvinar_diff_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 5000 \
+	--steplength=0.1 --randfib=1 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	--avoid=$out_dir/${session_name}_righthemi_diff.nii.gz \
+	--stop=$out_dir/${session_name}_Amygdala_diff_corr.nii.gz --forcedir --opd \
+	-s $dti_dir/BedpostX/merged -m $dti_dir/BedpostX/nodif_brain_mask \
+	--dir=$out_dir/$path_dir
+	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}_dti2struct.mat -out $out_dir/tract_${path_dir}_struct.nii.gz
+	echo " "	
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $out_dir/${session_name}_struct2dti.nii.gz \
+		$out_dir/tract*-n3.nii.gz &
+		fslview $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz \
+		$out_dir/tract*_struct.nii.gz &
+	endif
+	echo "Step 4: Done."
+	echo ${session_name}_DTI_SC_nhp_script_step3 | mail -s "@DTI_SC_nhp step 4 done" ${email}
+	
+endif
+goto exit
+
+exit:

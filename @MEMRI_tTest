@@ -1,0 +1,218 @@
+#!/bin/tcsh
+# set verbose # For Debugging Purposes
+# @MEMRI_tTest
+# by JD
+set version = 1.04-04-2013
+# Script to process manganese enhanced scans (for Caret, FreeSurfer, etc.)
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+
+####################################################################################################
+#       SET UP ANALYSIS HERE (This is specific for each analysis
+#
+# Directories
+
+set baseline_sessions = "MI00143"
+set expt_sessions = "MI00169 MI00170 MI00172" #
+set all_sessions = "MI00169" # only need to list new sessions here...
+set NORMALISE_OPTION = "Y"
+
+####################################################################################################
+# SET UP VARIABLES HERE (Don't fuck with these unless you know what you're doing!!)*
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+#set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+# incoming data labels (the script identifies input data by searching for these threads)
+set mpHR_label = _mprage05mmFOV2561001
+set mpLR_label = _mprage1mmnoIRFOV2561001
+# BET Variables (affects skull-stripping.  Play around with these values if you are having problems)
+set betF = 0.5 # Suggested value: 0.5
+set betG = 0.1 # Suggested values: 0.1, 0.2
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+# Program Options
+set REV_OPTION = "Y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "************************************"
+	echo "@MEMRI_tTest by JD, V."$version
+	echo "************************************"
+	echo " "
+	echo "Script for processing manganese-enhanced MRI data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, etc.  If the script doesn't work, try altering the"
+	echo " default values (edit this script)."
+	echo " "
+	echo "INPUT: @@MEMRIScript <ANALYSIS_NAME> <METHOD> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " ANALYSIS_NAME = Label for full analysis.  This has no impact on the program,"
+	echo "           it simply labels the data in the directory."
+	echo " METHOD = Type of analysis to run:"
+	echo "       (1) Standard MPRAGE sequences"
+	echo "       (2) Simmons GRE sequences"
+	echo "       (3) TI500-corrected MPRAGE sequences"
+	echo "       (4) TI800-corrected MPRAGE sequences"
+	echo " "
+	echo " "
+	echo "Note: Default is to perform all steps (leave STEP blank).  Otherwise, run each step one"
+	echo "      at a time."
+	goto exit
+endif
+
+while ($#argv > 0)
+    switch ($argv[1])
+        case -step: 
+            shift
+            set step=$argv[1]
+            breaksw
+        case -out: 
+            shift
+            set analysis_name=$argv[1]
+            breaksw
+        case -hr: 
+            shift
+            set hr_label=$argv[1]
+            breaksw
+        case -lr: 
+            shift
+            set lr_label=$argv[1]
+	     breaksw
+       default:
+                shift
+        endif
+                echo Unknown parameter $argv[1]
+    endsw
+    shift
+end
+
+set home_dir = $PWD
+mkdir -p $PWD/$analysis_name $PWD/$analysis_name/preprocessed_data
+set analysis_dir = $PWD/$analysis_name
+
+echo " "
+echo "************************************"
+echo "@@MEMRI_tTest by JD, V."$version
+echo "************************************"
+echo " "
+
+#set hr_label = mprage05x05x05mm
+#set lr_label = mprage1x1x1mmnoIRlrg
+
+
+if ($step == 1) then
+	goto part1
+else
+	goto part2
+end
+
+part1:
+################################################
+# Part 1 - Preprocessing of all sessions' data #
+################################################
+foreach session_name ($all_sessions)
+	echo " " 
+	echo "Analysing "$session_name
+	
+	# Set up directories for each session
+	cd ${session_name}*
+	set session_dir = $PWD
+	set nii_dir = $PWD/nii_files
+	set out_dir = $PWD/memri
+	set temp_dir = $PWD/memri_temp
+	mkdir -p $out_dir $temp_dir
+	
+	date
+	echo "Step 1: Correcting orientation..." 
+	cd $nii_dir
+	set counter = 1
+	foreach fn (`ls *${hr_label}*nii*`)
+		echo "...correcting orientation of "$fn
+		fslswapdim $fn x z y $temp_dir/${hr_label}_temp1_${counter}
+		fslorient -deleteorient $temp_dir/${hr_label}_temp1_${counter}
+		fslorient -setqformcode 1 $temp_dir/${hr_label}_temp1_${counter}
+		cp $temp_dir/${hr_label}_temp1_${counter}.nii.gz $temp_dir/hr_template.nii.gz
+		@ counter ++
+	end
+	foreach fn (`ls *${lr_label}*nii*`) 
+		fslswapdim $fn x z y $temp_dir/${fn}_temp
+		fslorient -deleteorient $temp_dir/${fn}_temp 
+		fslorient -setqformcode 1 $temp_dir/${fn}_temp 
+	end
+	cd $session_dir
+
+	echo "Steps 2,3,4: Use FLIRT to align low-res volume (2), divide by LR (3), and normalise (4)"
+	cd $temp_dir
+	set lr_vol = `ls *${lr_label}*nii*`
+	flirt -in $lr_vol -ref hr_template.nii.gz -dof 6 -out lr_aligned
+	set counter = 1
+	foreach fn (`ls ${hr_label}_temp1_*`)
+		fslmaths $fn -div lr_aligned ${hr_label}_temp2_${counter} -odt float
+		fslmaths ${hr_label}_temp2_${counter} -mas ${session_dir}/structurals/${session_name}_anatmask_fix $temp_dir/${hr_label}_temp3_${counter}
+		set normal = `fslstats $temp_dir/${hr_label}_temp3_${counter} -M -k ${session_dir}/${session_name}_memri_roi`
+		fslmaths $temp_dir/${hr_label}_temp3_${counter} -div $normal -mul 5000 ${analysis_dir}/preprocessed_data/${session_name}_Scan${counter}
+		@ counter ++
+	end
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview ${analysis_dir}/preprocessed_data/${session_name}_Scan* &
+	endif
+	cd $home_dir
+end
+
+goto exit		
+
+part2:
+################################################
+# Part 2 - Preprocessing of all sessions' data #
+################################################
+
+cd ${analysis_dir}/preprocessed_data
+mkdir ./aligned
+
+echo "Step 5: Merge all baseline scans into one volume (after flirting)"
+#if ($step == 5 || $step == 0) then
+#set counter = 1
+#foreach fn (`ls *_Scan*`)
+#	if ($counter == 1) then
+#		set refvol = $fn
+#		cp $fn ./aligned/${fn}_align.nii.gz
+#	else
+#		echo "...aligning "$fn
+#		flirt -in $fn -ref $refvol -out ./aligned/${fn}_align
+#	endif
+#	@ counter ++
+#end
+#set counter = 0
+#if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+#	fslview ./aligned/*_Scan*align* &
+#endif
+
+echo "Step 6: Rename baseline scans"
+set baseline_cnt = 1
+cd ${analysis_dir}/preprocessed_data/aligned
+foreach baseline ($baseline_sessions)
+	foreach fn (`ls ${baseline}_Scan*align*`)
+		echo "Renaming "$fn
+		cp $fn baseline${baseline_cnt}.nii.gz
+		@ baseline_cnt ++
+	end
+end
+	
+echo "Step 7: T-test"
+
+foreach expt ($expt_sessions)
+	rm -f ${analysis_dir}/Baseline_vs_${expt}*
+	3dttest -prefix ${analysis_dir}/Baseline_vs_${expt} -set1 baseline*.nii.gz -set2 ${expt}_Scan*align.nii.gz
+	3dAFNItoNIFTI ${analysis_dir}/Baseline_vs_${expt}+orig
+	gzip ${analysis_dir}/Baseline_vs_${expt}.nii
+	fslmaths ${analysis_dir}/Baseline_vs_${expt} -tfce 2 0.5 6 ${analysis_dir}/Baseline_vs_${expt}_tfce
+end
+
+exit:
+

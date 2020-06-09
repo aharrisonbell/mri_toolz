@@ -1,0 +1,327 @@
+#!/bin/tcsh
+# @RestState
+# by AHB, started July 2013
+set version = 1.24-07-2013
+# Generic script to prepare resting state data for analysis
+# Recipe based on Daniel Mitchell's approach
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set root_dir = $PWD
+set nii_dir = $PWD/nii_files
+set out_dir = $PWD/resting_state
+set anat_dir = $PWD/structurals
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/scripts # specifies location of TOPUP, etc.
+#
+# Program Options
+set REV_OPTION = "y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set epi_label = ep2dfmri
+set fmap_label = fieldmapTEs
+set epi_volume = `ls ${nii_dir}/*${epi_label}.nii*`
+set fmap_volume = `ls ${nii_dir}/*${fmap_label}*2001.nii.gz|tail -1`
+echo $epi_volume
+echo $fmap_volume
+#
+# BET Variables (affects skull-stripping.  Play around with these values if you are having problems)
+set betF = 0.5 # Suggested value: 0.5
+set betG = 0.1 # Suggested values: 0.1, 0.2
+#
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/standard_atlases/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/standard_atlases/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "***********************************"
+	echo "@RestState by AHB, V"$version
+	echo "***********************************"
+	echo " "
+	echo "Script to preprocess/analyse EPI data collected at the BSB (currently only for resting state data)"
+	echo "Note: this script assumes you have AFNI installed AND have already run @AnatScript to completion."
+	echo "INPUT: @RestState <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data (e.g., MI00xxx).  This has no impact on the program,"
+	echo "                it simply labels the data in the directory."
+	echo " "
+	echo "*** SUMMARY OF PROCEDURE / PREPROCESSING: ***"
+	echo "   0) Data collection / Convert to nifti and partial orientation correction (use @Convert2nii)"
+	echo " "
+	echo "  EPI DATA PREPROCESSING:"
+	echo "   1) FUGUE (field map correction) or use Dante's programme? (optional)"
+	echo "   2) Trim EPI dataset (remove 6 dummy scans)"
+	echo "   3) Correct Alignment"
+	echo "   * Look at summary statistics, mean stats, etc."
+	
+	echo "   4) Align to T1 space USING ONLY 6,9,12 DOF, RIGID BODY"
+	echo "	 5) Skull-strip data" (move this ahead of motion correction)
+		
+	echo "   6) MOTION CORRECTION..."
+	echo "      * Look at data again"
+
+	echo "    *** Complete Preprocessing of T1 data ***"
+
+	echo "   7) HIGH PASS
+	8 PCA ON CSF AND WM TO IDENTIFY REGRESSORS
+	9 DENOISE WITH ICA - AND THEN COMPARE TO PCA OF CSF AND WM (IDENTIFY COMPONENTS THAT ARE COMMON TO ALL TISSUE TYPES)
+	10 MODEL, WITH REGRESSORS (PCA) AND MOTION REGRESSORS + 1ST DERIV
+	11 LOW PASS FILTER
+	12) Spatial Smoothing (only within Tissue Masks)"
+	13 FAME AND FORTUNE
+	
+	Bandpass Filtering (0.0025-0.05Hz)" (OR FIRST DO HIGH-PASS (>0.0025HZ) AND THEN DO LOW PASS AFTER REGRESSION ANALYSIS <0.05HZ)
+	echo "   10) Denoise using ICA"
+	echo "	 11) Prepare anatomical masks (in structural/atlas space)"
+	
+	echo "ADDITIONAL STEPS FOR SEED-BASED FUNCTIONAL CONNECTIVITY"
+	
+	
+	echo " "
+	echo "  STRUCTURAL DATA PREPROCESSING (mostly accomplished with @AnatScript, which should be run first"
+	echo "   1) Correct orientation, bias-field correction, skull-stripping, and segmentation (use @AnatScript)"
+	echo "   2) Generate Tissue Masks for EPI data (threshold most-likely"	
+	echo "      * Look at data and summary statistics..."
+	echo "   5) Smooth dataset (FSLMATHS)"
+	echo "   6) Prepare T1 structurals (@AnatScript)"
+	echo "   7) Align EPI and T1 data to Atlas Space, using first rigid-body and then non-linear alignment"
+	echo " "
+	echo "PERFORM ANALYSIS (use Rik's Matlab Code?)"
+
+	goto exit
+endif
+
+set session_name = $1
+if ($#argv == 1) then
+	set step = 0
+else
+	set step = $2
+endif
+mkdir -p $out_dir $temp_dir
+
+echo "Analysing ..."${session_name}
+###################################################################################################
+# Step 1: Apply fieldmap correction to EPI data (fugue)
+if ($step =~ *1* || $step == 0) then
+	date
+	echo "..Step 1: Apply fieldmap correction to EPI data (fugue)..."
+	fugue -i $epi_volume --dwell=0.71 --loadfmap=${fmap_volume} -u $out_dir/${session_name}rs_1Fc
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $epi_volume $out_dir/${session_name}rs_1Fc.* &
+	endif
+	echo "..Step 1 - Done."
+endif
+
+###################################################################################################
+# Step 2: Trim EPI dataset (remove dummy scans)
+if ($step =~ *2* || $step == 0) then
+	date
+	echo "..Step 2: Trim EPI dataset (remove 5 dummy scans)..."
+	#fslroi $out_dir/${session_name}rs_1Fc.nii.gz $out_dir/${session_name}rs_2FcTr.nii.gz 5 1595
+	fslroi $epi_volume $out_dir/${session_name}rs_2FcTr.nii.gz 5 205
+	echo "..Step 2 - Done."
+endif
+
+##################################################################################################
+# Step 3: Correct alignment of EPI data
+if ($step =~ *3* || $step == 0) then
+	date
+	echo "..Step 3: Correct alignment of EPI data..."
+    	#fslswapdim $out_dir/${session_name}rs_2FcTr.nii.gz x z y $out_dir/${session_name}rs_3FcTrCa.nii.gz
+    	fslswapdim $out_dir/${session_name}rs_2FcTr.nii.gz x z y $out_dir/${session_name}rs_3FcTrCa.nii.gz
+	fslorient -deleteorient $out_dir/${session_name}rs_3FcTrCa.nii.gz 
+	fslorient -setqformcode 1 $out_dir/${session_name}rs_3FcTrCa.nii.gz 
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}rs_3FcTrCa* &
+	endif
+	echo "..Step 3 - Done."
+endif
+
+###################################################################################################
+# Step 4: Motion correction (FSL)
+if ($step =~ *4* || $step == 0) then
+	date
+	echo "..Step 4: Motion Correction..."
+	mcflirt -in $out_dir/${session_name}rs_3FcTrCa.nii.gz -out $out_dir/${session_name}rs_4FcTrCaMc -stats -plots
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}rs_3FcTrCa.nii.gz $out_dir/${session_name}rs_4FcTrCaMc.nii* &
+	endif
+	echo "..Step 4 - Done - Be sure to double check output."
+endif
+
+###################################################################################################
+# Step 5: Skull strip EPI dataset using BET (need to correct manually)
+if ($step =~ *5* || $step == 0) then
+	date
+	# Automatic Skull-Stripping
+	echo "..Step 5: Skull strip EPI dataset using BET (need to correct manually)..."
+	#bet $out_dir/${session_name}rs_3FcCaTr $out_dir/${session_name}rs_4FcCaTrSs -f $betF -g $betG
+	
+	# Skull-Stripping using corrected mask of structural
+	echo "....Using correctd mask from T1 Structual analysis (@AnatScript)"
+	flirt -in $anat_dir/${session_name}hr_2MgFx.nii.gz -ref $out_dir/${session_name}rs_4FcTrCaMc.nii.gz \
+	-dof 9 -omat $out_dir/${session_name}_struct2epi.mat -out $out_dir/${session_name}_struct2epi
+	flirt -in $anat_dir/${session_name}_anatmask_fix.nii.gz -ref $out_dir/${session_name}rs_4FcTrCaMc.nii.gz -applyxfm \
+	-init $out_dir/${session_name}_struct2epi.mat -out $temp_dir/${session_name}_structmask2epi_temp
+	fslmaths $temp_dir/${session_name}_structmask2epi_temp -thr .75 $out_dir/${session_name}_structmask2epi
+	fslmaths $out_dir/${session_name}rs_4FcTrCaMc.nii.gz -mas $out_dir/${session_name}_structmask2epi $out_dir/${session_name}rs_5FcTrCaMcSs
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}rs_4FcTrCaMc*nii.gz $out_dir/${session_name}_struct2epi*nii.gz  $out_dir/${session_name}_structmask2epi.nii.gz \
+		$out_dir/${session_name}rs_5FcTrCaMcSs*nii.gz &
+	endif
+	echo "..Step 5 - Done."
+endif
+
+###################################################################################################
+# Step 6: Slice Time Correction (optional)
+if ($step =~ *6* || $step == 0) then
+	date
+	echo "..Step 6: Slice Time Correction..."
+	echo "..Step 6 - Done."
+endif
+
+###################################################################################################
+# Step 7: Align to T1 space"
+if ($step =~ *7* || $step == 0) then	
+	date
+	echo "..Step 7: Align EPI data to T1 Structural Space"
+	echo "....Aligning EPI to structural"
+	flirt -in $out_dir/${session_name}rs_5FcTrCaMcSs -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -dof 6 -out $out_dir/${session_name}rs_epi2struct \
+	-omat $out_dir/${session_name}rs_epi2struct.mat
+
+	echo "....Applying transformation matrix"
+	flirt -in $out_dir/${session_name}rs_5FcTrCaMcSs -ref $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz -applyxfm -init $out_dir/${session_name}rs_epi2struct.mat \
+	-out $out_dir/${session_name}rs_7FcTrCaMcSsAl
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $anat_dir/${session_name}hr_StrippedAnat_native.nii.gz $out_dir/${session_name}rs_7FcTrCaMcSsAl.* &
+	endif
+	echo "..Step 7 - Done."
+endif
+
+#############################################
+# *** Complete Preprocessing of T1 data *** #
+#############################################
+
+###################################################################################################
+# Step 8: Spatial Smoothing (only within Tissue Masks)
+if ($step =~ *8* || $step == 0) then
+	date
+	echo "..Step 8: Spatial filtering..."
+	echo "....Sigma = FWHM / 2.355"
+	echo "....FWHM = 3mm"
+
+	echo "......creating tissue-specific masks from segmented T1 data"
+	fslmaths $anat_dir/${session_name}hr_StrippedAnat_native_seg.nii.gz -thr 1 -uthr 1 $out_dir/${session_name}_csf
+	fslmaths $anat_dir/${session_name}hr_StrippedAnat_native_seg.nii.gz -thr 2 -uthr 2 $out_dir/${session_name}_gm
+	fslmaths $anat_dir/${session_name}hr_StrippedAnat_native_seg.nii.gz -thr 3 -uthr 3 $out_dir/${session_name}_wm
+
+	echo "......smoothing data"
+	# Grey Matter:
+	fslmaths $out_dir/${session_name}rs_7FcCaTrSsMcAl.nii.gz -mas $out_dir/${session_name}_gm.nii.gz -s 1.273 $out_dir/${session_name}rsGM_8FcCaTrSsMcAlSm 
+	# White Matter:
+	fslmaths $out_dir/${session_name}rs_7FcCaTrSsMcAl.nii.gz -mas $out_dir/${session_name}_wm.nii.gz -s 1.273 $out_dir/${session_name}rsWM_8FcCaTrSsMcAlSm 
+	
+	fslmaths $out_dir/${session_name}rsGM_8FcCaTrSsMcAlSm -add $out_dir/${session_name}rsWM_8FcCaTrSsMcSm $out_dir/${session_name}rs_8FcCaTrSsMcAlSm 
+
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}rs*_8FcCaTrSsMcAlSm.* &
+	endif
+	echo "..Step 8 - Done."
+endif
+
+###################################################################################################
+# Step 9: Bandpass Filtering (0.0025-0.05Hz)
+if ($step =~ *9* || $step == 0) then
+	date
+	echo "..Step 9: Spatial filtering..."
+	echo "....Bandpass Filtering: 0.0025 - 0.05 Hz"
+	echo "....as per Mantini et al., 2011"
+
+	gunzip $out_dir/${session_name}rs_6FcCaTrSxMcSm.nii.gz $out_dir/${session_name}_structmask2epi.nii.gz
+	fslmaths -bptf
+	3dBandpass -despike -mask $out_dir/${session_name}_structmask2epi.nii \
+	-prefix $out_dir/${session_name}rs_7FcCaTrSxMcSmDsBp 0.0025 0.05 $out_dir/${session_name}rs_6FcCaTrSxMcSm.nii
+	3dBandpass -despike -mask $out_dir/${session_name}_structmask2epi.nii \
+	-prefix $out_dir/${session_name}rs_7FcCaTrSxMcSmBp 0.0025 0.05 $out_dir/${session_name}rs_6FcCaTrSxMcSm.nii
+	3dAFNItoNIFTI $out_dir/${session_name}rs_7FcCaTrSxMcSmDsBp
+	3dAFNItoNIFTI $out_dir/${session_name}rs_7FcCaTrSxMcSmBp
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		afni $out_dir/${session_name}rs_[167]* &
+	endif
+	echo "..Step 9 - Done."
+endif
+
+###################################################################################################
+# Step 10: Denoise using ICA
+
+
+
+###################################################################################################
+# Step 11: Prepare anatomical masks (in structural/atlas space)
+
+
+
+
+###################################################################################################
+# Step 6: Spatial Filtering (smoothing)
+
+
+
+
+
+###################################################################################################
+# Step 9: Prep directory for CONN/Matlab
+if ($step =~ *9* || $step == 0) then
+	date
+	echo "Step 9: Prep directory for CONN/Matlab..."
+	echo "Conn toolbox requires the following files (all aligned to Caret Atlas:"
+	echo " -- EPI aligned to CARET atlas"
+	echo " -- normalized structural"
+	echo " -- gray matter volume"
+	echo " -- white matter volume"
+	echo " -- CSF volume"
+	echo " -- ROIS, aligned to Caret"
+	
+	mkdir -p $out_dir/conn_data
+	rm -f $out_dir/conn_data/* $out_dir/conn_data/epi_split/* $out_dir/conn_data/epi_split_align/*
+	echo "...copying structurals"
+	cp $caret_atlas $out_dir/conn_data
+	cp $anat_dir/${session_name}hr_StrippedAnat_caret.nii* $out_dir/conn_data/${session_name}_structural.nii.gz
+	
+	echo "...aligning and copying segmentation volumes"
+	flirt -in $anat_dir/${session_name}hr_StrippedAnat_native_pve_0.nii.gz -ref $caret_atlas -applyxfm -init $anat_dir/${session_name}_struct2caret.mat -out $out_dir/conn_data/${session_name}_CSF.nii.gz 
+	flirt -in $anat_dir/${session_name}hr_StrippedAnat_native_pve_1.nii.gz -ref $caret_atlas -applyxfm -init $anat_dir/${session_name}_struct2caret.mat -out $out_dir/conn_data/${session_name}_GreyMatter.nii.gz 
+	flirt -in $anat_dir/${session_name}hr_StrippedAnat_native_pve_2.nii.gz -ref $caret_atlas -applyxfm -init $anat_dir/${session_name}_struct2caret.mat -out $out_dir/conn_data/${session_name}_WhiteMatter.nii.gz 
+	flirt -in $anat_dir/${session_name}hr_StrippedAnat_native_pveseg.nii.gz -ref $caret_atlas -applyxfm -init $anat_dir/${session_name}_struct2caret.mat -out $out_dir/conn_data/${session_name}_Segmented.nii.gz 	
+	
+	echo "...splitting and aligning EPI data"
+	mkdir -p $out_dir/conn_data/epi_split $out_dir/conn_data/epi_split_align
+	fslsplit $out_dir/${session_name}rs_7FcCaTrSxMcStSm.nii.gz $out_dir/conn_data/epi_split/${session_name}rs_tr
+ 	convert_xfm -omat $out_dir/${session_name}_epi2caret.mat -concat $out_dir/${session_name}rs_epi2struct.mat $anat_dir/${session_name}_struct2caret.mat
+	foreach tr (`seq -w 0 1600`)
+		echo "......aligning volume "$tr
+		flirt -in $out_dir/conn_data/epi_split/${session_name}rs_tr${tr}.nii.gz -ref $caret_atlas -applyxfm -init $out_dir/${session_name}_epi2caret.mat -out $out_dir/conn_data/epi_split_align/${session_name}rs_align_tr${tr}
+	end
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/conn_data/${session_name}_*.nii.gz $out_dir/conn_data/epi_split_align/${session_name}rs_align_tr0000.nii.gz &
+	endif
+	
+	echo "...Unzipping all volumes"
+	gunzip $out_dir/conn_data/*.nii.gz
+	gunzip $out_dir/conn_data/epi_split_align/*.nii.gz
+
+	echo "Step 9 - Done."
+endif
+
+exit:

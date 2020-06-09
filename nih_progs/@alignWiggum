@@ -1,0 +1,14 @@
+#!/bin/tsch
+
+# Align EPI to Stereo
+rm WiggBucket_align2HR+orig* WiggEPI_align2HR*
+
+3drotate -NN -rotate -0.00I 0.00R 0.00A -ashift -0.20S -2.80L 6.00P \
+-prefix WiggBucket_align2HR Wiggum_bucket+orig
+
+3drotate -NN -rotate -0.00I 0.00R 0.00A -ashift -0.20S -2.80L 6.00P \
+-prefix WiggEPI_align2HR Wigg070124_1_09+orig
+
+and move everything back 2holes (i.e., add 2 to coronal when going from AFNI to
+AI)
+#3dcalc -a -b -c -expr 'a+b+c' -prefix 

@@ -1,0 +1,94 @@
+#!/bin/tcsh
+# @MonkeyBet
+set version = 1.04-04-2013
+# Script to generate conduct brain extraction on monkey brains using 'atlas' based approach
+
+if ($#argv < 2) then
+	echo " "
+	echo "*******************************"
+	echo "@MonkeyBet, V."$version
+	echo "*******************************"
+	echo " "
+	echo "INPUT: @MonkeyBet -in <vol> -t2 <vol> -refvol <vol> -refmask <vol> -bigmonkey"
+	echo "where: "
+	echo "	-in <FILENAME> (mandatory): is the T1-weighted image to be brain-extracted" 
+	echo "  -t2 <FILENAME> (mandatory): is the aligned, T2-weighted image corresponding to the same brain as -IN"
+	echo "	-refvol <FILENAME> (optional): X is the un-brain-extracted volume to serve as the reference volume (Default: KyriazisAtlas_Volume)" 
+	echo "	-refmask <FILENAME> (optional): X is the corrected mask or brain-extracted volume for the reference volume (Default: KyriazisAtlas_Mask)" 
+	echo "  -bigmonkey (optional): specifies to use large monkey default atlas (i.e., >10kg)"
+	goto exit
+endif
+
+# Establish Defaults
+set refvol = ~/Documents/fMRI_Data/scripts/KyriazisAtlas_Volume.nii.gz
+set refmask = ~/Documents/fMRI_Data/scripts/KyriazisAtlas_Mask.nii.gz
+set t2 = 0
+
+# Read in flags
+set numarg = `expr $#`
+set cnt = 0
+while ($cnt < $numarg)
+	switch ($1) 
+	case -in:
+		set targ=$2
+		breaksw
+	case -t2:
+		set targt2=$2
+		breaksw
+	case -refmask:
+		set refmask=$2
+		breaksw
+	case -refvol:
+		set refvol=$2
+		breaksw
+	case -bigmonkey:
+		set refvol = ~/Documents/fMRI_Data/scripts/KyriazisBigAtlas_Volume.nii.gz
+		set refmask = ~/Documents/fMRI_Data/scripts/KyriazisBigAtlas_Mask.nii.gz
+		breaksw
+	default:
+	endsw
+	set cnt = `expr $cnt + 1`
+	shift
+end
+
+# Prepare and clean temp directory
+mkdir -p $PWD/temp
+set temp_dir = $PWD/temp
+
+echo " "
+echo "Target volume: "$targ
+echo "Reference volume: "$refvol
+echo " "
+
+# Step 1 - divide target by target-t2
+if ($targt2 == 0) then
+	echo "No T2 indicated.  No bias-field correction applied"
+	cp ${targ}* ${temp_dir}/target_temp1.nii.gz
+else
+	fslmaths $targ -div $targt2 ${temp_dir}/target_temp1
+endif
+
+# Step 2 - Perform initial BET on target volume and mask T1/T2 division
+echo "Performing initial BET on target volume"
+bet $targ ${temp_dir}/tempbet -f 0.5 -g 0.1 -r 50 -s -A
+fslmaths ${temp_dir}/target_temp1 -mas ${temp_dir}/tempbet_outskin_mask ${temp_dir}/target_temp2
+
+# Step 3 - Create Binary Mask of Reference Mask (in case user isn't using defaults):
+echo "Creating binary mask of reference mask"
+fslmaths $refmask -div $refmask ${temp_dir}/binarymask
+
+# Step 4  - Align Volumes, using initial mask as REF weighting
+echo "Aligning volumes using the initial mask as REF weighting"
+flirt -in ${temp_dir}/target_temp2 -ref $refvol -refweight ${temp_dir}/binarymask.nii.gz \
+	-omat ${temp_dir}/temp_omat.omat -out ${temp_dir}/Target2Ref
+fslview $refvol ${temp_dir}/Target2Ref.nii.gz &
+	
+# Step 5 - Invert transform and apply to mask
+echo "Inverting the transformation matrix and applying to mask"
+convert_xfm -omat ${temp_dir}/temp_inverse.omat -inverse ${temp_dir}/temp_omat.omat
+flirt -in ${temp_dir}/binarymask.nii.gz -ref $targ -applyxfm -init ${temp_dir}/temp_inverse.omat -out ${targ}_mask
+fslmaths $targ -mas ${targ}_mask ${targ}_brain
+fslview $targ ${targ}_mask ${targ}_brain &
+
+exit:
+

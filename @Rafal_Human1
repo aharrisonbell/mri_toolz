@@ -1,0 +1,210 @@
+#!/bin/tcsh
+# @Rafal_Human1
+# by AHB, started May 2013
+set version = 1.21-05-2013
+# Script to process and segment DTI data collected at Bangor
+
+####################################################################################################
+# SET UP VARIABLES HERE*
+#
+# Directories
+set home_dir = $PWD
+set scriptdir = ~/Documents/fMRI_Data/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+# Standard Atlases
+set human_brain = ~/Documents/fMRI_Data/human_brain/human_standard.nii.gz
+#
+# Program Options
+set REV_OPTION = "y" # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*******************************"
+	echo "@Rafal_Human1 by AHB, V"$version
+	echo "*******************************"
+	echo " "
+	echo "Script for processing DTI data for the DTI SC-amygdala project (Rafal et al.)"
+	echo "This script assumes the data have been run through @DTIScript  until at least step 8 (Bedpostx)"
+	echo "This script is also specific for NHP data"
+	echo " "
+	echo "INPUT: @Rafal_Human1 <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data"
+	echo " "
+	echo " step (optional): perform step X where..."
+	echo "   1) Align structurals and masks to DTI data"
+	echo "   2) Run standard tracts"
+	echo "   3) Run non-standard tracts"
+	echo " "
+	goto exit
+endif
+set  subject = $1
+set step = $2
+
+###################################################################################################
+if ($step =~ *1* || $step == 0) then
+	# Step 1: Run Standard Tracts - SC-Pulv-Amyg
+
+	echo "Step 1: Run standard tracts..."
+	echo " "
+	echo "Note: this step requires the following masks: "
+	echo "	SubjectDir_(R/L)SC_reg_corr.nii.gz"
+	echo "	SubjectDir_(R/L)pulv_reg_corr.nii.gz"
+	echo "	SubjectDir_(R/L)amyg_reg_corr.nii.gz"
+	echo " "
+	
+	cd ${home_dir}/${subject}
+	set mask_dir = ${home_dir}/${subject}/masks_diff
+	set out_dir = ${home_dir}/${subject}/tracts
+	set bp_dir = ${home_dir}/${subject}/bedpostX
+	mkdir -p $out_dir
+	
+	# Align nodif_brain to structural (only for matrix creation purposes at the moment)	
+	flirt -in $bp_dir/nodif_brain.nii.gz -ref ${subject}_brain.nii.gz -omat $out_dir/${subject}_diff2struct.mat -out ${subject}_nodif2struct
+			
+	# Create waypoints.txt file
+	echo `ls $mask_dir/${subject}_Rpulv_reg_corr.nii.gz` > $out_dir/waypoints_R_SC-Pul-Amyg.txt 
+	echo `ls $mask_dir/${subject}_Ramyg_reg_corr.nii.gz` >> $out_dir/waypoints_R_SC-Pul-Amyg.txt 
+	echo `ls $mask_dir/${subject}_Lpulv_reg_corr.nii.gz` > $out_dir/waypoints_L_SC-Pul-Amyg.txt 
+	echo `ls $mask_dir/${subject}_Lamyg_reg_corr.nii.gz` >> $out_dir/waypoints_L_SC-Pul-Amyg.txt 
+	
+	echo `ls $mask_dir/${subject}_RpulvSlice_reg_corr.nii.gz` > $out_dir/waypoints_R_SC-PulSlice-Amyg.txt 
+	echo `ls $mask_dir/${subject}_Ramyg_reg_corr.nii.gz` >> $out_dir/waypoints_R_SC-Pul-Amyg.txt 
+	echo `ls $mask_dir/${subject}_LpulvSlice_reg_corr.nii.gz` > $out_dir/waypoints_L_SC-PulSlice-Amyg.txt 
+	echo `ls $mask_dir/${subject}_Lamyg_reg_corr.nii.gz` >> $out_dir/waypoints_L_SC-Pul-Amyg.txt 
+	
+	foreach hemi (R L)	
+		# SC-Pulv-Amyg
+		set path_dir = ${hemi}_SC-Pul-Amyg
+		echo "***** Tracing "$path_dir
+		probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}SC_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+		--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+		--avoid=${subject}_BNST_optic_chiasm.nii.gz --stop=$mask_dir/${subject}_${hemi}amyg_reg_corr.nii.gz --forcedir --opd \
+		-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+		--dir=$out_dir/$path_dir --waypoints=$out_dir/waypoints_${hemi}_SC-Pul-Amyg.txt --waycond=AND
+		cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+		rm -f $out_dir/$path_dir/particle*
+		flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+		echo " "	
+	
+		# SC-PulvSlice-Amyg
+		set path_dir = ${hemi}_SC-PulSlice-Amyg
+		echo "***** Tracing "$path_dir
+		probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}SC_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+		--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+		--avoid=${subject}_BNST_optic_chiasm.nii.gz --stop=$mask_dir/${subject}_${hemi}amyg_reg_corr.nii.gz --forcedir --opd \
+		-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+		--dir=$out_dir/$path_dir --waypoints=$out_dir/waypoints_${hemi}_SC-PulSlice-Amyg.txt --waycond=AND
+		cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+		rm -f $out_dir/$path_dir/particle*
+		flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+		echo " "	
+	end	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $bp_dir/nodif_brain.nii.gz \
+		$out_dir/tract*.nii.gz &
+	endif
+	echo "Step 1: Done."
+	echo ${subject}_Rafal_Human1_script_step1 | mail -s "@Rafal_Human1 Step 1 done" ${email}
+endif
+
+###################################################################################################
+if ($step =~ *2* || $step == 0) then
+	# Step 2: Run Non-standard Tracts - SC-Amyg, Pulv-Amyg, etc.
+
+	echo "Step 1: Run standard tracts..."
+	echo " "
+	echo "Note: this step requires the following masks: "
+	echo "	SubjectDir_(R/L)SC_reg_corr.nii.gz"
+	echo "	SubjectDir_(R/L)pulv_reg_corr.nii.gz"
+	echo "	SubjectDir_(R/L)amyg_reg_corr.nii.gz"
+	echo " "
+	
+	cd ${home_dir}/${subject}
+	set mask_dir = ${home_dir}/${subject}/masks_diff
+	set out_dir = ${home_dir}/${subject}/tracts
+	set bp_dir = ${home_dir}/${subject}/bedpostX
+	mkdir -p $out_dir
+	
+	# Align nodif_brain to structural (only for matrix creation purposes at the moment)	
+	flirt -in $bp_dir/nodif_brain.nii.gz -ref ${subject}_brain.nii.gz -omat $out_dir/${subject}_diff2struct.mat -out ${subject}_nodif2struct
+			
+	# Create waypoints.txt file
+	echo `ls $mask_dir/${subject}_MDThalStriaMask.nii.gz` > $out_dir/waypoints_R_Stria.txt 
+	echo `ls $mask_dir/${subject}_RSC_reg_corr.nii.gz` >> $out_dir/waypoints_R_Stria.txt 
+	echo `ls $mask_dir/${subject}_MDThalStriaMask.nii.gz` > $out_dir/waypoints_L_Stria.txt 
+	echo `ls $mask_dir/${subject}_LSC_reg_corr.nii.gz` >> $out_dir/waypoints_L_Stria.txt 
+	
+	foreach hemi (R L)
+		# SC-Amyg
+		set path_dir = ${hemi}_SC-Amyg
+		echo "***** Tracing "$path_dir
+		probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}SC_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+		--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 --avoid=${subject}_BNST_optic_chiasm.nii.gz \
+		--stop=$mask_dir/${subject}_${hemi}amyg_reg_corr.nii.gz --forcedir --opd \
+		-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+		--dir=$out_dir/$path_dir
+		cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+		rm -f $out_dir/$path_dir/particle*
+		flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+		echo " "	
+	
+		# SC-Pulv
+		set path_dir = ${hemi}_SC-Pul
+		echo "***** Tracing "$path_dir
+		probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}SC_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+		--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 --avoid=${subject}_BNST_optic_chiasm.nii.gz \
+		--stop=$mask_dir/${subject}_${hemi}pulv_reg_corr.nii.gz --forcedir --opd \
+		-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+		--dir=$out_dir/$path_dir 
+		cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+		rm -f $out_dir/$path_dir/particle*
+		flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+		echo " "	
+	
+		# Pulv-Amyg
+		set path_dir = ${hemi}_Pul-Amyg
+		echo "***** Tracing "$path_dir
+		probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}pulv_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+		--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 --avoid=$mask_dir/${subject}_ExclusionMask.nii.gz \
+		--stop=$mask_dir/${subject}_${hemi}amyg_reg_corr.nii.gz --forcedir --opd \
+		-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+		--dir=$out_dir/$path_dir
+		cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+		rm -f $out_dir/$path_dir/particle*
+		flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+		echo " "	
+	
+	#	# Stria Terminalis
+	#	set path_dir = ${hemi}_Stria
+	#	echo "***** Tracing "$path_dir
+	#	probtrackx2 -V 1 -x $mask_dir/${subject}_${hemi}amyg_reg_corr.nii.gz -l --onewaycondition --wayorder --pd -c 0.2 -S 2000 \
+	#	--steplength=0.5 -P 5000 --fibthresh=0.01 --distthresh=0.0 --sampvox=0.0 \
+	#	--stop=$mask_dir/${subject}_${hemi}SC_reg_corr.nii.gz --forcedir --opd \
+	#	-s $bp_dir/merged -m $bp_dir/nodif_brain_mask \
+	#	--dir=$out_dir/$path_dir --waypoints=$out_dir/waypoints_${hemi}_Stria.txt --waycond=AND
+	#	cp $out_dir/$path_dir/fdt_paths.nii.gz $out_dir/tract_${path_dir}.nii.gz
+	#	rm -f $out_dir/$path_dir/particle*
+	#	flirt -in $out_dir/tract_${path_dir}.nii.gz -ref ${subject}_brain.nii.gz -applyxfm -init $out_dir/${subject}_diff2struct.mat -out $out_dir/tract_${path_dir}_toStruct
+	#	echo " "	
+
+	end
+
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then		
+		fslview $bp_dir/nodif_brain.nii.gz \
+		$out_dir/tract*.nii.gz &
+	endif
+	echo "Step 2: Done."
+	echo ${subject}_Rafal_Human1_script_step2 | mail -s "@Rafal_Human1 Step 2 done" ${email}
+endif
+
+goto exit
+
+exit:

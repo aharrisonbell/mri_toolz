@@ -1,0 +1,484 @@
+#!/bin/tcsh -f
+# @MGH3_Part15_RSVP_PostNeuronPostJN_Analysis
+# Started November 2009
+# This script reanalyzes the localizer dataset according to suggestions from 
+# the reviewers of the RSVP single unit manuscript.
+
+echo "######################################################"
+echo "##   @MGH3_Part15_RSVP_PostNeuron - Script by AHB   ##"
+echo "######################################################"
+echo " "
+echo "Note: this program requires the following *.1D file:"
+echo "- prefix_thresholds.1D"
+echo " "
+echo "Prefix: 		       	"${prefix}
+echo "Minimum Cluster Distance: 	"${rmm}
+echo "Minimum Cluster Volume:   	"${mvol}
+echo " "
+echo "Specific for data collected for Stewie and Wiggum"
+date
+cd ${out_dir}
+
+#goto method2
+
+## METHOD 1 - Old method, using stricter thresholds.
+
+echo " "
+echo "############"
+echo "# METHOD 1 #"
+echo "############"
+
+step1:
+echo "...Remove all previous masks..."
+rm -f ./intermediate/${prefix}_FACESv*PJ+* ./intermediate/${prefix}_PLACESv*PJ+* 
+rm -f ./intermediate/${prefix}_OBJECTSv*PJ+* ./intermediate/${prefix}_BODYPARTSv*PJ+* ./temp/${prefix}_tempmask* ./${prefix}_mask??+*
+echo " "
+echo "...Load thresholds..."
+set thresholds = (`more ${prefix}_thresholds_RSVP.1D`)
+echo " "
+echo "...Load brik assignments..."
+set briks = (`more ../MGH_FacePlacePart3_briks_RSVP.1D`)
+echo " "
+set subbrik = (`echo $briks[1]`)	# Contrast subbrik
+set posbrik = (`echo $briks[2]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[3]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[1]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[2]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr 'a/a' -prefix ./intermediate/${prefix}_PLACESvfacesPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr 'a/a' -prefix ./intermediate/${prefix}_FACESvplacesPJ
+echo "...Done."
+echo " "
+set subbrik = (`echo $briks[4]`)	# Contrast subbrik
+set posbrik = (`echo $briks[5]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[6]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[3]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[4]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)' -prefix ./intermediate/${prefix}_OBJECTSvfacesPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*2' -prefix ./intermediate/${prefix}_FACESvobjectsPJ
+echo "...Done."
+echo " "
+set subbrik = (`echo $briks[7]`)	# Contrast subbrik
+set posbrik = (`echo $briks[8]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[9]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[5]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[6]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr 'a/a' -prefix ./intermediate/${prefix}_BODYPARTSvfacesPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./intermediate/${prefix}_FACESvbodypartsPJ
+echo "...Done."
+echo " "
+set subbrik = (`echo $briks[10]`)	# Contrast subbrik
+set posbrik = (`echo $briks[11]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[12]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[7]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[8]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*2' -prefix ./intermediate/${prefix}_OBJECTSvplacesPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*2' -prefix ./intermediate/${prefix}_PLACESvobjectsPJ
+echo "...Done."
+echo " "
+set subbrik = (`echo $briks[13]`)	# Contrast subbrik
+set posbrik = (`echo $briks[14]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[15]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[9]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[10]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*2' -prefix ./intermediate/${prefix}_BODYPARTSvplacesPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./intermediate/${prefix}_PLACESvbodypartsPJ
+echo "...Done."
+echo " "
+set subbrik = (`echo $briks[16]`)	# Contrast subbrik
+set posbrik = (`echo $briks[17]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $briks[18]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[11]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[12]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*4' -prefix ./intermediate/${prefix}_BODYPARTSvobjectsPJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./intermediate/${prefix}_OBJECTSvbodypartsPJ
+echo "...Done."
+
+
+step2:
+echo "############################################################################"
+echo "# STEP 2.0 - Prepare Conjunction Masks for Each Relevant Stimulus Condition"
+echo "############################################################################"
+echo "Generating Venn Diagram Conjunction Maps..."
+rm -f ${prefix}_FACES_vennPJ+* ${prefix}_PLACES_vennPJ+* ${prefix}_OBJECTS_vennPJ+* ${prefix}_BODYPARTS_vennPJ+*
+rm -f ./temp/${prefix}_FACES_vennPJ_temp+* ./temp/${prefix}_PLACES_vennPJ_temp+* ./temp/${prefix}_OBJECTS_vennPJ_temp+* ./temp/${prefix}_BODYPARTS_vennPJ_temp+*
+
+3dcalc -a ./intermediate/${prefix}_FACESvplacesPJ+orig -b ./intermediate/${prefix}_FACESvobjectsPJ+orig -c ./intermediate/${prefix}_FACESvbodypartsPJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_FACES_vennPJ_temp
+3dcalc -a ./intermediate/${prefix}_PLACESvfacesPJ+orig -b ./intermediate/${prefix}_PLACESvobjectsPJ+orig -c ./intermediate/${prefix}_PLACESvbodypartsPJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_PLACES_vennPJ_temp
+3dcalc -a ./intermediate/${prefix}_OBJECTSvfacesPJ+orig -b ./intermediate/${prefix}_OBJECTSvplacesPJ+orig -c ./intermediate/${prefix}_OBJECTSvbodypartsPJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_OBJECTS_vennPJ_temp
+3dcalc -a ./intermediate/${prefix}_BODYPARTSvfacesPJ+orig -b ./intermediate/${prefix}_BODYPARTSvplacesPJ+orig -c ./intermediate/${prefix}_BODYPARTSvobjectsPJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_BODYPARTS_vennPJ_temp
+
+echo "Mask output by AllConditions-Scrambled Mask"
+# 1.1 - Remove previous file
+rm -f ${prefix}_AllCondsMask_${thresall}+orig.*
+
+# 1.2 - Generate Mask of AllConds - Scrambled (currently 83 tstat)
+rm -f ./temp/${prefix}_*S_vennPJ+*
+3dmerge -1clust ${rmm} ${mvol} -1dindex ${thresbrik} -1tindex ${thresbrik} -1thres ${thresall} -prefix ${prefix}_AllCondsMask_${thresall} ${prefix}_bucket+orig
+3dcalc -a ./temp/${prefix}_FACES_vennPJ_temp+orig -b ${prefix}_AllCondsMask_${thresall}+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_FACES_vennPJ
+3dcalc -a ./temp/${prefix}_PLACES_vennPJ_temp+orig -b ${prefix}_AllCondsMask_${thresall}+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_PLACES_vennPJ
+3dcalc -a ./temp/${prefix}_OBJECTS_vennPJ_temp+orig -b ${prefix}_AllCondsMask_${thresall}+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_OBJECTS_vennPJ
+3dcalc -a ./temp/${prefix}_BODYPARTS_vennPJ_temp+orig -b ${prefix}_AllCondsMask_${thresall}+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_BODYPARTS_vennPJ
+
+echo "Generating master conjunction map (only voxels present in all three contrasts)..."
+# Include only those voxels that are present in all three contrasts:
+rm -f ./intermediate/${prefix}_*S3PJ+orig.*
+3dcalc -a ./temp/${prefix}_FACES_vennPJ+orig -expr 'ispositive(a-6.1)' -prefix ./intermediate/${prefix}_FACES3PJ
+3dcalc -a ./temp/${prefix}_PLACES_vennPJ+orig -expr 'ispositive(a-6.1)*2' -prefix ./intermediate/${prefix}_PLACES3PJ
+3dcalc -a ./temp/${prefix}_OBJECTS_vennPJ+orig -expr 'ispositive(a-6.1)*4' -prefix ./intermediate/${prefix}_OBJECTS3PJ
+3dcalc -a ./temp/${prefix}_BODYPARTS_vennPJ+orig -expr 'ispositive(a-6.1)*8' -prefix ./intermediate/${prefix}_BODYPARTS3PJ
+
+echo "Mask output by 'Only Temporal Lobe' mask..."
+rm -f ${prefix}_TemporalMasknoRet* ./temp/${prefix}_TemporalMasknoRet* ./temp/${prefix}_*3PJ_TmpLobe*
+3dZeropad -P -$teoclip -prefix ./temp/${prefix}_TemporalMasknoRettemp ${prefix}_TemporalMask+orig
+3dZeropad -P $teoclip -prefix ./${prefix}_TemporalMasknoRet ./temp/${prefix}_TemporalMasknoRettemp+orig
+3dcalc -a ./intermediate/${prefix}_FACES3PJ+orig -b ${prefix}_TemporalMasknoRet+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_FACES3PJ_TmpLobe
+3dcalc -a ./intermediate/${prefix}_PLACES3PJ+orig -b ${prefix}_TemporalMasknoRet+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_PLACES3PJ_TmpLobe
+3dcalc -a ./intermediate/${prefix}_OBJECTS3PJ+orig -b ${prefix}_TemporalMasknoRet+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_OBJECTS3PJ_TmpLobe
+3dcalc -a ./intermediate/${prefix}_BODYPARTS3PJ+orig -b ${prefix}_TemporalMasknoRet+orig -expr 'a*(b/b)' -prefix ./temp/${prefix}_BODYPARTS3PJ_TmpLobe
+
+echo "Generating 3-way conjunction map"
+rm -f ${prefix}_All3Conditions_RSVP_TmpLobe${negcond}* 
+3dcalc -a ./temp/${prefix}_FACES3PJ_TmpLobe+orig -b ./temp/${prefix}_PLACES3PJ_TmpLobe+orig \
+-c ./temp/${prefix}_OBJECTS3PJ_TmpLobe+orig -d ./temp/${prefix}_BODYPARTS3PJ_TmpLobe+orig \
+-expr 'a+b+c+d' -prefix ${prefix}_All3Conditions_RSVP_TmpLobe${negcond}
+
+echo " Mask creation complete."
+goto exit
+
+
+
+
+## METHOD 2 - New method (i.e., faces vs. all3, places vs. all3, etc.)
+method2:
+echo " "
+echo "############"
+echo "# METHOD 1 #"
+echo "############"
+
+# Create temporary masks for each category from bucket (T-stat 5.171=p=0.01 corr)
+rm -f ./temp/${prefix}_rsvp*temp*
+3dmerge -1clust ${rmm} ${mvol} -1dindex 50 -1tindex 50 -1thres 5.171 -prefix ./temp/${prefix}_rsvpFACES3temp ${prefix}_bucket+orig
+3dmerge -1clust ${rmm} ${mvol} -1dindex 53 -1tindex 53 -1thres 5.171 -prefix ./temp/${prefix}_rsvpPLACES3temp ${prefix}_bucket+orig
+3dmerge -1clust ${rmm} ${mvol} -1dindex 56 -1tindex 56 -1thres 5.171 -prefix ./temp/${prefix}_rsvpOBJECTS3temp ${prefix}_bucket+orig
+3dmerge -1clust ${rmm} ${mvol} -1dindex 59 -1tindex 59 -1thres 5.171 -prefix ./temp/${prefix}_rsvpBODYPARTS3temp ${prefix}_bucket+orig
+
+# Compile individual masks
+3dcalc -a ./temp/${prefix}_rsvpFACES3temp+orig -b ./temp/${prefix}_rsvpPLACES3temp+orig -c ./temp/${prefix}_rsvpOBJECTS3temp+orig \
+-d ./temp/${prefix}_rsvpBODYPARTS3temp+orig -expr '((a/a)*1)+((b/b)*2)+((c/c)*4)+((d/d)*8)' -prefix ${prefix}_All3Conditions_RSVP_NewMethod
+
+
+
+
+goto exit
+
+
+
+
+
+
+
+
+step3:
+echo "#############################################################"
+echo "# STEP 3.0 - Repeat mask preparation using aligned datasets #"
+echo "#############################################################"
+echo " "
+cd ${out_dir}
+echo "Creating new bucket..."
+set briks = (`more ../MGH_FacePlacePart3_algnbriks.1D`)
+set newbriks = (`more ../MGH_FacePlacePart3_sumabriks_postJN.1D`)
+echo "Generate masks..."
+# Ensure Anatomical Volume is ready
+3dAFNItoNIFTI ${anat}+orig.
+rm -f ${prefix}_NewBucket* ${prefix}_BetaBucket* ./temp/${prefix}_temp* 
+
+foreach brik ($briks) 
+rm -f ./temp/${prefix}_temp2_${brik}_ALGN*
+3dAFNItoNIFTI -float -prefix ./temp/${prefix}_temp_${brik} ${prefix}_bucket+orig.'['${brik}']'
+flirt -forcescaling -in ./temp/${prefix}_temp_${brik} -out ./temp/${prefix}_temp2_${brik}_ALGN -init ${prefix}_FlirtMatrix -applyxfm -ref ${anat}
+end
+
+echo "Generate additional bucket for beta coefficients..."
+foreach brik (19 22 25 31 34 40)
+set brikcount = ${brik}
+rm -f ./temp/${prefix}_temp2_${brik}_ALGN*
+3dAFNItoNIFTI -float -prefix ./temp/${prefix}_temp_${brikcount} ${prefix}_bucket+orig.'['${brikcount}']'
+flirt -forcescaling -in ./temp/${prefix}_temp_${brikcount} -out ./temp/${prefix}_temp3_${brikcount}_ALGN -init ${prefix}_FlirtMatrix -applyxfm -ref ${anat}
+end
+rm -f ./Aligned/${prefix}_NewBucket* ./Aligned/${prefix}_BetaBucket*
+3dbucket -fbuc -verb -prefix ./Aligned/${prefix}_NewBucket ./temp/${prefix}_temp2_*_ALGN*
+3dbucket -fbuc -verb -prefix ./Aligned/${prefix}_BetaBucket ./temp/${prefix}_temp3_*_ALGN*
+rm -f ./temp/${prefix}_temp*
+
+echo "Remove all previous masks..."
+rm -f ./Aligned/${prefix}*_algn* ./temp/${prefix}_tempmask* ./temp/${prefix}_mask*algn*
+echo "Load thresholds..."
+set thresholds = (`more ${prefix}_thresholds_postJN.1D`)
+echo " "
+echo "################################################"
+echo "# Monkey Faces (A,neg) - Monkey Places (B,pos) #"
+echo "################################################"
+echo " "
+set subbrik = (`echo $newbriks[1]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[2]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[3]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[1]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[2]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr 'a/a' -prefix ./Aligned/${prefix}_PLACESvfaces_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr 'a/a' -prefix ./Aligned/${prefix}_FACESvplaces_algn_PJ
+echo "...Done."
+echo " "
+
+echo "#################################################"
+echo "# Monkey Faces (A,neg) - Monkey Objects (B,pos) #"
+echo "#################################################"
+echo " "
+set subbrik = (`echo $newbriks[4]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[5]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[6]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[3]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[4]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)' -prefix ./Aligned/${prefix}_OBJECTSvfaces_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*2' -prefix ./Aligned/${prefix}_FACESvobjects_algn_PJ
+echo "...Done."
+echo " "
+
+echo "####################################################"
+echo "# Monkey Faces (A,neg) - Monkey Body Parts (B,pos) #"
+echo "####################################################"
+echo " "
+set subbrik = (`echo $newbriks[7]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[8]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[9]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[5]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[6]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr 'a/a' -prefix ./Aligned/${prefix}_BODYPARTSvfaces_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./Aligned/${prefix}_FACESvbodyparts_algn_PJ
+echo "...Done."
+echo " "
+
+echo "##################################################"
+echo "# Monkey Places (A,neg) - Monkey Objects (B,pos) #"
+echo "##################################################"
+echo " "
+set subbrik = (`echo $newbriks[10]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[11]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[12]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[7]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[8]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*2' -prefix ./Aligned/${prefix}_OBJECTSvplaces_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*2' -prefix ./Aligned/${prefix}_PLACESvobjects_algn_PJ
+echo "...Done."
+echo " "
+
+echo "#####################################################"
+echo "# Monkey Places (A,neg) - Monkey Body Parts (B,pos) #"
+echo "#####################################################"
+echo " "
+set subbrik = (`echo $newbriks[13]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[14]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[15]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[9]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[10]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*2' -prefix ./Aligned/${prefix}_BODYPARTSvplaces_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./Aligned/${prefix}_PLACESvbodyparts_algn_PJ
+echo "...Done."
+echo "...Done."
+echo " "
+
+echo "######################################################"
+echo "# Monkey Objects (A,neg) - Monkey Body Parts (B,pos) #"
+echo "######################################################"
+echo " "
+set subbrik = (`echo $newbriks[16]`)	# Contrast subbrik
+set posbrik = (`echo $newbriks[17]`)	# Subbrik for Positive - Neutral (B)
+set negbrik = (`echo $newbriks[18]`)	# Subbrik for Negative - Neutral (A)
+set poscond = (`echo $thresholds[11]`)	# Threshold for Condition - Neutral, Positive Condition
+set negcond = (`echo $thresholds[12]`)	# Threshold for Condition - Neutral, Negative Condition
+source ../@MGH1_GenerateMask_Align
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${poscond}_Pos+orig -expr '(a/a)*4' -prefix ./Aligned/${prefix}_BODYPARTSvobjects_algn_PJ
+3dcalc -a ./temp/${prefix}_tempmask${subbrik}Cond${negcond}_Neg+orig -expr '(a/a)*4' -prefix ./Aligned/${prefix}_OBJECTSvbodyparts_algn_PJ
+echo "...Done."
+
+step4:
+echo "#################################################################################################"
+echo "# STEP 4.0 - Prepare Conjunction Masks for Each Relevant Stimulus Condition using aligned masks #"
+echo "#################################################################################################"
+echo "Generating Venn Diagram Conjunction Maps..."
+rm -f ./Aligned/${prefix}_FACES_venn_algn_PJ+* ./Aligned/${prefix}_PLACES_venn_algn_PJ+* ./Aligned/${prefix}_OBJECTS_venn_algn_PJ+* ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ+*
+rm -f ./temp/${prefix}_FACES_venn_algn_PJ_temp+* ./temp/${prefix}_PLACES_venn_algn_PJ_temp+* ./temp/${prefix}_OBJECTS_venn_algn_PJ_temp+* ./temp/${prefix}_BODYPARTS_venn_algn_PJ_temp+*
+
+3dcalc -a ./Aligned/${prefix}_FACESvplaces_algn_PJ+orig -b ./Aligned/${prefix}_FACESvobjects_algn_PJ+orig -c ./Aligned/${prefix}_FACESvbodyparts_algn_PJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_FACES_venn_algn_PJ_temp
+3dcalc -a ./Aligned/${prefix}_PLACESvfaces_algn_PJ+orig -b ./Aligned/${prefix}_PLACESvobjects_algn_PJ+orig -c ./Aligned/${prefix}_PLACESvbodyparts_algn_PJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_PLACES_venn_algn_PJ_temp
+3dcalc -a ./Aligned/${prefix}_OBJECTSvfaces_algn_PJ+orig -b ./Aligned/${prefix}_OBJECTSvplaces_algn_PJ+orig -c ./Aligned/${prefix}_OBJECTSvbodyparts_algn_PJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_OBJECTS_venn_algn_PJ_temp
+3dcalc -a ./Aligned/${prefix}_BODYPARTSvfaces_algn_PJ+orig -b ./Aligned/${prefix}_BODYPARTSvplaces_algn_PJ+orig -c ./Aligned/${prefix}_BODYPARTSvobjects_algn_PJ+orig \
+-expr 'a+b+c' -prefix ./temp/${prefix}_BODYPARTS_venn_algn_PJ_temp
+
+echo "Generate All Conditions - Scrambled Mask using aligned bucket"
+rm -f ./Aligned/${prefix}_AllCondsMask_${thresall}_algn*
+3dAFNItoNIFTI -float -prefix ./temp/${prefix}_tempallconds ${prefix}_bucket+orig.'['${thresbrik}']'
+flirt -forcescaling -in ./temp/${prefix}_tempallconds -out ./temp/${prefix}_AllCondsMask -init ${prefix}_FlirtMatrix -applyxfm -ref ${anat}
+3dmerge -1clust ${rmm} ${mvol} -1dindex 0 -1tindex 0 -1thres ${thresall} -prefix ./Aligned/${prefix}_AllCondsMask_${thresall}_algn ./temp/${prefix}_AllCondsMask.nii.gz
+echo "Done."
+rm -f ./Aligned/${prefix}_*_venn_algn_PJ+*
+3dcalc -a ./temp/${prefix}_FACES_venn_algn_PJ_temp+orig -b ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_FACES_venn_algn_PJ
+3dcalc -a ./temp/${prefix}_PLACES_venn_algn_PJ_temp+orig -b ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_PLACES_venn_algn_PJ
+3dcalc -a ./temp/${prefix}_OBJECTS_venn_algn_PJ_temp+orig -b ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_OBJECTS_venn_algn_PJ
+3dcalc -a ./temp/${prefix}_BODYPARTS_venn_algn_PJ_temp+orig -b ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ
+
+echo "Generating master conjunction map (only voxels present in all three contrasts)..."
+# Include only those voxels that are present in all three contrasts:
+rm -f ./Aligned/${prefix}_*S3_algn_PJ+orig.*
+3dcalc -a ./Aligned/${prefix}_FACES_venn_algn_PJ+orig -expr 'ispositive(a-6.1)' -prefix ./Aligned/${prefix}_FACES3_algn_PJ
+3dcalc -a ./Aligned/${prefix}_PLACES_venn_algn_PJ+orig -expr 'ispositive(a-6.1)*2' -prefix ./Aligned/${prefix}_PLACES3_algn_PJ
+3dcalc -a ./Aligned/${prefix}_OBJECTS_venn_algn_PJ+orig -expr 'ispositive(a-6.1)*4' -prefix ./Aligned/${prefix}_OBJECTS3_algn_PJ
+3dcalc -a ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ+orig -expr 'ispositive(a-6.1)*8' -prefix ./Aligned/${prefix}_BODYPARTS3_algn_PJ
+
+echo "Generating animate vs. inanimate conjunction maps..."
+rm ./Aligned/${prefix}_*animate_algn_* ./temp/${prefix}_*V*animate_algn_PJmap*
+3dcalc -a ./Aligned/${prefix}_FACESvplaces_algn_PJ+orig -b ./Aligned/${prefix}_FACESvobjects_algn_PJ+orig -c ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig \
+-expr '(equals((a/a)+(b/b),2))*(c/c)' -prefix ./temp/${prefix}_FACESVinanimate_algn_PJmap
+3dcalc -a ./Aligned/${prefix}_PLACESvfaces_algn_PJ+orig -b ./Aligned/${prefix}_PLACESvbodyparts_algn_PJ+orig -c ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig \
+-expr '(equals((a/a)+(b/b),2))*(c/c)' -prefix ./temp/${prefix}_PLACESVanimate_algn_PJmap
+3dcalc -a ./Aligned/${prefix}_OBJECTSvfaces_algn_PJ+orig -b ./Aligned/${prefix}_OBJECTSvbodyparts_algn_PJ+orig -c ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig \
+-expr '(equals((a/a)+(b/b),2))*(c/c)' -prefix ./temp/${prefix}_OBJECTSVanimate_algn_PJmap
+3dcalc -a ./Aligned/${prefix}_BODYPARTSvplaces_algn_PJ+orig -b ./Aligned/${prefix}_BODYPARTSvobjects_algn_PJ+orig -c ./Aligned/${prefix}_AllCondsMask_${thresall}_algn+orig \
+-expr '(equals((a/a)+(b/b),2))*(c/c)' -prefix ./temp/${prefix}_BODYPARTSVinanimate_algn_PJmap
+
+# Paste F-stat values for Face Vs. Inanimate, Place Vs. Animate, Object Vs. Animate, Body Parts Vs. Inanimate
+foreach brik (86 91 101 96) 
+3dAFNItoNIFTI -float -prefix ./temp/${prefix}_temp_${brik} ${prefix}_bucket+orig.'['${brik}']'
+flirt -forcescaling -in ./temp/${prefix}_temp_${brik} -out ./temp/${prefix}_temp${brik} -init ${prefix}_FlirtMatrix -applyxfm -ref ${anat}
+end
+3dcalc -a ./temp/${prefix}_FACESVinanimate_algn_PJmap+orig -b ./temp/${prefix}_temp86.nii.gz -expr 'a*b' -prefix ./Aligned/${prefix}_FACESVinanimate_algn_PJ
+3dcalc -a ./temp/${prefix}_BODYPARTSVinanimate_algn_PJmap+orig -b ./temp/${prefix}_temp91.nii.gz -expr 'a*b' -prefix ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJ
+3dcalc -a ./temp/${prefix}_PLACESVanimate_algn_PJmap+orig -b ./temp/${prefix}_temp96.nii.gz -expr 'a*b' -prefix ./Aligned/${prefix}_PLACESVanimate_algn_PJ
+3dcalc -a ./temp/${prefix}_OBJECTSVanimate_algn_PJmap+orig -b ./temp/${prefix}_temp101.nii.gz -expr 'a*b' -prefix ./Aligned/${prefix}_OBJECTSVanimate_algn_PJ
+
+
+stepin:
+
+echo "Mask output by 'no V4' mask..."
+rm -f ./temp/${prefix}_*venn_algn_PJ* ./temp/${prefix}_*S3_algn_PJ* ./temp/${prefix}_*animate_algn_PJ* 
+rm -f ./Aligned/${prefix}_*_vennPJnoRET_algn_* ./Aligned/${prefix}_*noRET_algn_* ./Aligned/${prefix}_*TmpLobe_algn*
+# stage 1 - clip all masks posterior to TEO
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_FACES_venn_algn_PJtemp ./Aligned/${prefix}_FACES_venn_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_PLACES_venn_algn_PJtemp ./Aligned/${prefix}_PLACES_venn_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_OBJECTS_venn_algn_PJtemp ./Aligned/${prefix}_OBJECTS_venn_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_BODYPARTS_venn_algn_PJtemp ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_FACES3_algn_PJtemp ./Aligned/${prefix}_FACES3_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_PLACES3_algn_PJtemp ./Aligned/${prefix}_PLACES3_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_OBJECTS3_algn_PJtemp ./Aligned/${prefix}_OBJECTS3_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_BODYPARTS3_algn_PJtemp ./Aligned/${prefix}_BODYPARTS3_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_FACESVinanimate_algn_PJtemp ./Aligned/${prefix}_FACESVinanimate_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_PLACESVanimate_algn_PJtemp ./Aligned/${prefix}_PLACESVanimate_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_OBJECTSVanimate_algn_PJtemp ./Aligned/${prefix}_OBJECTSVanimate_algn_PJ+orig
+3dZeropad -P -${sumateoclip} -prefix ./temp/${prefix}_BODYPARTSVinanimate_algn_PJtemp ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJ+orig
+
+# add missing slices
+rm -f ./Aligned/${prefix}_*_PJnoRET*
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_FACES_venn_algn_PJnoRET ./temp/${prefix}_FACES_venn_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_PLACES_venn_algn_PJnoRET ./temp/${prefix}_PLACES_venn_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_OBJECTS_venn_algn_PJnoRET ./temp/${prefix}_OBJECTS_venn_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_BODYPARTS_venn_algn_PJnoRET ./temp/${prefix}_BODYPARTS_venn_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_FACES3_algn_PJnoRET ./temp/${prefix}_FACES3_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_PLACES3_algn_PJnoRET ./temp/${prefix}_PLACES3_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_OBJECTS3_algn_PJnoRET ./temp/${prefix}_OBJECTS3_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_BODYPARTS3_algn_PJnoRET ./temp/${prefix}_BODYPARTS3_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_FACESVinanimate_algn_PJnoRET ./temp/${prefix}_FACESVinanimate_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_PLACESVanimate_algn_PJnoRET ./temp/${prefix}_PLACESVanimate_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_OBJECTSVanimate_algn_PJnoRET ./temp/${prefix}_OBJECTSVanimate_algn_PJtemp+orig
+3dZeropad -P ${sumateoclip} -prefix ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJnoRET ./temp/${prefix}_BODYPARTSVinanimate_algn_PJtemp+orig
+
+echo "Mask output by 'Only Temporal Lobe' mask..."
+rm -f ./Aligned/${prefix}_*PJ_TmpLobe_algn*
+rm -f ./Aligned/${prefix}_TemporalMasknoRet_algn*
+3dAFNItoNIFTI -float -prefix ./temp/${prefix}_temponly ${prefix}_TemporalMask+orig.
+flirt -forcescaling -in ./temp/${prefix}_temponly -out ./Aligned/${prefix}_TemporalMask_algn -init ${prefix}_FlirtMatrix -applyxfm -ref ${anat}
+3dZeropad -P -$sumateoclip -prefix ./temp/${prefix}_TemporalMasknoRet_algntemp ./Aligned/${prefix}_TemporalMask_algn.nii.qz
+3dZeropad -P $sumateoclip -prefix ${prefix}_TemporalMasknoRet_algn ./temp/${prefix}_TemporalMask_algntemp+orig
+
+3dcalc -a ./Aligned/${prefix}_FACES_venn_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_FACES_vennPJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_PLACES_venn_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_PLACES_vennPJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_OBJECTS_venn_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_OBJECTS_vennPJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_BODYPARTS_vennPJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_FACES3_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_FACES3PJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_PLACES3_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_PLACES3PJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_OBJECTS3_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_OBJECTS3PJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_BODYPARTS3_algn_PJ+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_BODYPARTS3PJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_FACESVinanimate_algn_PJnoRET+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_FACESVinanimatePJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_PLACESVanimate_algn_PJnoRET+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_PLACESVanimatePJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_OBJECTSVanimate_algn_PJnoRET+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_OBJECTSVanimatePJ_TmpLobe_algn
+3dcalc -a ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJnoRET+orig -b ./Aligned/${prefix}_TemporalMasknoRet_algn+orig -expr 'a*(b/b)' -prefix ./Aligned/${prefix}_BODYPARTSVinanimatePJ_TmpLobe_algn
+
+### AllConditions3
+3dcalc -a ./Aligned/${prefix}_FACES3PJ_TmpLobe_algn+orig -b ./Aligned/${prefix}_PLACES3PJ_TmpLobe_algn+orig \
+-c ./Aligned/${prefix}_OBJECTS3PJ_TmpLobe_algn+orig -d ./Aligned/${prefix}_BODYPARTS3PJ_TmpLobe_algn+orig \
+-expr '((a/a)*1)+((b/b)*2)+((c/c)*4)+((d/d)*8)' -prefix ${prefix}_AllConditionsPJ_TmpLobe_algn
+
+
+
+
+stepin:
+echo "Refit to suma dimensions..."
+source ../@MGH_Refit2SUMA ${prefix}_AllConditionsPJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES_venn_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES_venn_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS_venn_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS_venn_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES3_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES3_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS3_algn_PJ
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS3_algn_PJ
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACESVinanimate_algn_PJ
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACESVanimate_algn_PJ
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTSVanimate_algn_PJ
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJ
+
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES_venn_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES_venn_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS_venn_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS_venn_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES3_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES3_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS3_algn_PJnoRET
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS3_algn_PJnoRET
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACESVinanimate_algn_PJnoRET
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACESVanimate_algn_PJnoRET
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTSVanimate_algn_PJnoRET
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTSVinanimate_algn_PJnoRET
+
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES_vennPJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES_vennPJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS_vennPJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS_vennPJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACES3PJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACES3PJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTS3PJ_TmpLobe_algn
+#source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTS3PJ_TmpLobe_algn
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_FACESVinanimatePJ_TmpLobe_algn
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_PLACESVanimatePJ_TmpLobe_algn
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_OBJECTSVanimatePJ_TmpLobe_algn
+source ../@MGH_Refit2SUMA ./Aligned/${prefix}_BODYPARTSVinanimatePJ_TmpLobe_algn
+
+
+
+exit:

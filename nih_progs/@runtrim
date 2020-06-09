@@ -1,0 +1,190 @@
+#!/bin/tsch -f
+
+## All Runs
+rm -f Wiggum_AllSessions*+orig* \
+./scripts/all_stimuli.1D ./scripts/all_censor.1D ./scripts/all_motion.1D
+3dTcat -verbose -prefix Wiggum_AllSessions_temp \
+./intermediate/Wiggum091215_11*001+orig.HEAD \
+./intermediate/Wiggum091215_11*002+orig.HEAD \
+./intermediate/Wiggum091215_11*003+orig.HEAD \
+./intermediate/Wiggum091215_11*004+orig.HEAD \
+./intermediate/Wiggum091215_11*006+orig.HEAD \
+./intermediate/Wiggum091215_11*008+orig.HEAD \
+./intermediate/Wiggum091215_11*013+orig.HEAD \
+./intermediate/Wiggum091215_11*014+orig.HEAD \
+./intermediate/Wiggum091215_11*015+orig.HEAD \
+./intermediate/Wiggum091215_11*016+orig.HEAD \
+./intermediate/Wiggum091215_11*017+orig.HEAD \
+./intermediate/Wiggum091215_11*018+orig.HEAD \
+./intermediate/Wiggum091215_11*019+orig.HEAD \
+./intermediate/Wiggum091215_11*020+orig.HEAD \
+./intermediate/Wiggum091215_11*021+orig.HEAD \
+./intermediate/Wiggum091215_11*022+orig.HEAD \
+./intermediate/Wiggum091215_11*023+orig.HEAD \
+./intermediate/Wiggum091215_11*024+orig.HEAD \
+./intermediate/Wiggum091218_11*014+orig.HEAD \
+./intermediate/Wiggum091218_11*015+orig.HEAD \
+./intermediate/Wiggum091218_11*016+orig.HEAD \
+./intermediate/Wiggum091218_11*017+orig.HEAD \
+./intermediate/Wiggum091218_11*018+orig.HEAD \
+./intermediate/Wiggum091218_11*020+orig.HEAD \
+./intermediate/Wiggum091218_11*021+orig.HEAD \
+./intermediate/Wiggum091218_11*022+orig.HEAD \
+./intermediate/Wiggum091218_11*023+orig.HEAD \
+./intermediate/Wiggum091218_11*024+orig.HEAD \
+./intermediate/Wiggum091218_11*025+orig.HEAD \
+./intermediate/Wiggum091218_11*026+orig.HEAD \
+./intermediate/Wiggum091218_11*027+orig.HEAD \
+./intermediate/Wiggum091218_11*028+orig.HEAD \
+./intermediate/Wiggum091218_11*029+orig.HEAD \
+./intermediate/Wiggum091218_11*030+orig.HEAD \
+./intermediate/Wiggum091218_11*031+orig.HEAD \
+./intermediate/Wiggum091218_11*032+orig.HEAD
+
+rm -f all_mask+orig*
+3dAutobox -prefix Wiggum_AllSessions Wiggum_AllSessions_temp+orig
+3dAutomask -dilate 4 -prefix all_mask Wiggum_AllSessions+orig
+
+
+
+## All_Stimuli.1D
+echo "All Stimuli"
+cat \
+./scripts/stimversion1.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion1.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion5.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion1.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion5.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion5.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion5.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion1.1D \
+./scripts/stimversion2.1D \
+./scripts/stimversion3.1D \
+./scripts/stimversion4.1D \
+./scripts/stimversion5.1D \
+./scripts/stimversion6.1D \
+./scripts/stimversion1.1D \
+./scripts/stimversion2.1D \
+> ./scripts/all_stimuli.1D
+
+## All_Censor.1D
+echo "All Censor"
+cat \
+./scripts/Wiggum091215_001_censor.1D \
+./scripts/Wiggum091215_002_censor.1D \
+./scripts/Wiggum091215_003_censor.1D \
+./scripts/Wiggum091215_004_censor.1D \
+./scripts/Wiggum091215_006_censor.1D \
+./scripts/Wiggum091215_008_censor.1D \
+./scripts/Wiggum091215_013_censor.1D \
+./scripts/Wiggum091215_014_censor.1D \
+./scripts/Wiggum091215_015_censor.1D \
+./scripts/Wiggum091215_016_censor.1D \
+./scripts/Wiggum091215_017_censor.1D \
+./scripts/Wiggum091215_018_censor.1D \
+./scripts/Wiggum091215_019_censor.1D \
+./scripts/Wiggum091215_020_censor.1D \
+./scripts/Wiggum091215_021_censor.1D \
+./scripts/Wiggum091215_022_censor.1D \
+./scripts/Wiggum091215_023_censor.1D \
+./scripts/Wiggum091215_024_censor.1D \
+./scripts/Wiggum091218_014_censor.1D \
+./scripts/Wiggum091218_015_censor.1D \
+./scripts/Wiggum091218_016_censor.1D \
+./scripts/Wiggum091218_017_censor.1D \
+./scripts/Wiggum091218_018_censor.1D \
+./scripts/Wiggum091218_020_censor.1D \
+./scripts/Wiggum091218_021_censor.1D \
+./scripts/Wiggum091218_022_censor.1D \
+./scripts/Wiggum091218_023_censor.1D \
+./scripts/Wiggum091218_024_censor.1D \
+./scripts/Wiggum091218_025_censor.1D \
+./scripts/Wiggum091218_026_censor.1D \
+./scripts/Wiggum091218_027_censor.1D \
+./scripts/Wiggum091218_028_censor.1D \
+./scripts/Wiggum091218_029_censor.1D \
+./scripts/Wiggum091218_030_censor.1D \
+./scripts/Wiggum091218_031_censor.1D \
+./scripts/Wiggum091218_032_censor.1D \
+> ./scripts/all_censor.1D
+
+## All_Motion.1D
+echo "All motion"
+cat \
+./scripts/Wiggum091215_motion_001.1D \
+./scripts/Wiggum091215_motion_002.1D \
+./scripts/Wiggum091215_motion_003.1D \
+./scripts/Wiggum091215_motion_004.1D \
+./scripts/Wiggum091215_motion_006.1D \
+./scripts/Wiggum091215_motion_008.1D \
+./scripts/Wiggum091215_motion_013.1D \
+./scripts/Wiggum091215_motion_014.1D \
+./scripts/Wiggum091215_motion_015.1D \
+./scripts/Wiggum091215_motion_016.1D \
+./scripts/Wiggum091215_motion_017.1D \
+./scripts/Wiggum091215_motion_018.1D \
+./scripts/Wiggum091215_motion_019.1D \
+./scripts/Wiggum091215_motion_020.1D \
+./scripts/Wiggum091215_motion_021.1D \
+./scripts/Wiggum091215_motion_022.1D \
+./scripts/Wiggum091215_motion_023.1D \
+./scripts/Wiggum091215_motion_024.1D \
+./scripts/Wiggum091218_motion_014.1D \
+./scripts/Wiggum091218_motion_015.1D \
+./scripts/Wiggum091218_motion_016.1D \
+./scripts/Wiggum091218_motion_017.1D \
+./scripts/Wiggum091218_motion_018.1D \
+./scripts/Wiggum091218_motion_020.1D \
+./scripts/Wiggum091218_motion_021.1D \
+./scripts/Wiggum091218_motion_022.1D \
+./scripts/Wiggum091218_motion_023.1D \
+./scripts/Wiggum091218_motion_024.1D \
+./scripts/Wiggum091218_motion_025.1D \
+./scripts/Wiggum091218_motion_026.1D \
+./scripts/Wiggum091218_motion_027.1D \
+./scripts/Wiggum091218_motion_028.1D \
+./scripts/Wiggum091218_motion_029.1D \
+./scripts/Wiggum091218_motion_030.1D \
+./scripts/Wiggum091218_motion_031.1D \
+./scripts/Wiggum091218_motion_032.1D \
+> ./scripts/all_motion.1D
+
+
+set script_dir = ./scripts
+
+waver -dt 2 -EXPR "(-0.184/1.5*exp(-t/1.5))+(0.33/4.5*exp(-t/4.5))+(0.67/13.5*exp(-t/13.5))" -peak 1 \
+-xyout -input ${script_dir}/'all_stimuli.1D[0]' >! ${script_dir}/mkface_MION.1D
+
+waver -dt 2 -EXPR "(-0.184/1.5*exp(-t/1.5))+(0.33/4.5*exp(-t/4.5))+(0.67/13.5*exp(-t/13.5))" -peak 1 \
+-xyout -input ${script_dir}/'all_stimuli.1D[1]' >! ${script_dir}/mkbody_MION.1D
+
+waver -dt 2 -EXPR "(-0.184/1.5*exp(-t/1.5))+(0.33/4.5*exp(-t/4.5))+(0.67/13.5*exp(-t/13.5))" -peak 1 \
+-xyout -input ${script_dir}/'all_stimuli.1D[2]' >! ${script_dir}/mkobject_MION.1D
+
+waver -dt 2 -EXPR "(-0.184/1.5*exp(-t/1.5))+(0.33/4.5*exp(-t/4.5))+(0.67/13.5*exp(-t/13.5))" -peak 1 \
+-xyout -input ${script_dir}/'all_stimuli.1D[3]' >! ${script_dir}/mkplace_MION.1D
+
+waver -dt 2 -EXPR "(-0.184/1.5*exp(-t/1.5))+(0.33/4.5*exp(-t/4.5))+(0.67/13.5*exp(-t/13.5))" -peak 1 \
+-xyout -input ${script_dir}/'all_stimuli.1D[4]' >! ${script_dir}/scrambled_MION.1D
+

@@ -1,0 +1,45 @@
+#!/bin/tcsh
+# @FlipAP
+# by AHB
+set version = 1.30-01-2013
+# Script to flip AP direction of volumes in case the patient position was entered incorrectly.  Should be run AFTER @Convert2nii correction
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set temp_dir = $PWD/temp
+#
+# Program Options
+set REV_OPTION = "Y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*********************************"
+	echo "@FlipAP by AHB, V"$version
+	echo "*********************************"
+	echo " "
+	echo "Script for flipping volumes in the AP direction, in case patient position"
+	echo "entered incorrectly."
+	echo " "
+	echo "INPUT: @FlipAP <PREFIX>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " PREFIX: Will find ALL files that match this prefix and flip them."
+	goto exit
+endif
+
+mkdir -p $temp_dir
+set prefix = $1
+foreach fn (`ls *$prefix*.nii.gz`) 
+	echo "Flipping "$fn
+	cp $fn $temp_dir/
+	fslswapdim $fn -x -y z $temp_dir/temp1
+	fslorient -deleteorient $temp_dir/temp1
+	fslorient -setqformcode 1 $temp_dir/temp1
+	mv $temp_dir/temp1.nii.gz $fn
+end
+exit:

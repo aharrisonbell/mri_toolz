@@ -1,0 +1,247 @@
+#!/bin/tcsh -f
+# @RSVP_Wiggum Script
+# Written Dec.2009, based on @MGH3_Stewie
+
+# Revised to be up-to-date, February 2011 - after 2nd JN review
+
+# This script runs the preprocessing and analysis steps for Wiggum's new fMRI data, collected
+# after the Neuron submission of the RSVP single unit paper.
+
+if ($#argv == 0) then
+	echo " "
+	echo "--------------------------------------------"
+	echo "@RSVP_Wiggum script Ver.1.0 by AHB, Dec 2009"
+	echo "--------------------------------------------"
+	echo " "
+	echo "Data must already be in AFNI format for this script to function."
+	echo "Run this script from the directory where all data is located."
+	echo " "
+	echo "NOTE: This script depends on several variables that must be hard-coded"
+	echo "within the script itself.  These variables (which include things like"
+	echo "number of sessions, number of runs, etc.) differ from monkey to monkey"
+	echo "and so it is STRONGLY recommended that a different version of this script"
+	echo "is saved for each analysis."
+	echo " "
+	echo "NOTE: This script also assumes that the following files are located in"
+	echo "in the same directory as the incoming data:"
+	echo "    <session prefix>.stim   -- contains the stimulus outline for ALL runs"
+	echo "    <session prefix>.censor -- containining the censor list for ALL runs"
+	echo "    all_concat.1D           -- lists the breakpoint in runs for ALL SESSIONS"
+	echo " "
+	echo " "
+	echo "where:"
+	echo "step: perform step X where..."
+	echo "          Step 1 = Align all EPI runs to base volume (must be specified)"
+	echo "          Step 2 = Preprocessing of each run"
+	echo "          Step 3 = Generate HRF and Stimulus Files"
+	echo "          Step 4 = Concatenate All Runs (this is where to eliminate bad runs)"
+	echo "          Step 5 = Multiple Regression Analysis"
+	echo " "
+	goto exit
+endif
+
+set start = $1
+set out_dir = $PWD/
+mkdir ${out_dir}scripts
+mkdir ${out_dir}intermediate
+mkdir ${out_dir}outliers
+mkdir ${out_dir}/Matlab_Analysis
+
+set script_dir = $PWD/scripts
+set int_dir = $PWD/intermediate
+set outlier_dir = $PWD/outliers
+set matlab_dir = $PWD/Matlab_Analysis
+
+# STEP 0.0 - Set up parameters and variables
+############################################################################
+# STEP 0.0 - Hard-coding variables
+# This preliminary section is where all the hard-coded variables can be set.
+# Once these variables have been set, no further changes to the remaining code
+# should be necessary.
+############################################################################
+
+###################
+# fMRI Parameters #
+###################
+
+set input_prefix = "axialepi"		# Input Prefix
+set prefix = "Wiggum"			# Prefix
+set TR = 2000   			# TR (in ms)
+set nSess = 3	   			# Number of sessions
+set maxR = 32				# Maximum number of runs per session
+set nR = 74				    # Total number of runs across all sessions (32+24+18
+set nt = 170				# Number of timepoints per run
+set ns  = 27				# Number of slices
+set Xdir = "R-L"			# Direction of X Plane
+set Ydir = "S-I"			# Direction of Y Plane
+set Zdir = "P-A"			# Direction of Z Plane
+set ipr = 1.5625			# Inplane resolution
+set bpr = 1.5				# Between plane resolution
+set basesess = "Wiggum091218"		# Session for baseline volume
+set baserun = 018			# Run from BASESESS for alignment
+set baseline = ${basesess}"_1_"${baserun}"+orig"
+set listsess = "Wiggum091208 Wiggum091215 Wiggum091218"
+set email = "andrew.bell@psy.ox.ac.uk"	# Email address for progress reports
+set sumaprefix = "NIH_Wiggum"	        # Prefix for SUMA files
+set voxel_x = 1.5625			# AlphaSim: voxel dimension in X (R-L) plane
+set voxel_y = 1.5625			# AlphaSim: voxel dimension in Y (S-I) plane
+set voxel_z = 1.5			# AlphaSim: voxel dimension in Z (A-P) plane
+set matrix_x = 64			# AlphaSim: matrix dimension in X (R-L) plane
+set matrix_y = 64
+set pthr = 0.07				# AlphaSim: individual voxel significance level
+set iter = 1000				# AlphaSim: number of simulations
+set anat = "WiggumHRanat"
+set thresbrik = 75 			# Threshold Brik for AllConds - Scrambled (t-stat)
+set thresall = 10.78			# Threshold Level (8.34=1-6, 10.78=1-8)
+set rmm = 0				# Voxel Distance (0 = six nearest neighbours)
+set mvol = 12				# Minimum Volume (in uL)or negative is voxels (6=11.7uL)
+set maxroi = 12
+set Aclip = -4
+set Pclip = -4				# Number of slices to clip from the anterior edge
+set teoclip = 0
+
+### NOTE ABOUT CONNECTIVITY RADIUS:
+# Connected by a face =>  	rmm = voxel_x
+# Connected by an edge => 	rmm = sqrt[(voxel_x)^2 + (voxel_y)^2]
+# Connected by a corner =>	rmm = sqrt[(voxel_z)^2 + (sqrt[(voxel_x)^2 + (voxel_y)^2])^2]
+
+### NOTE: The following is the alignment parameters necessary to align the output
+# from the deconvolution to the HiRes anatomical.  THIS IS DIFFERENT FOR EACH MONKEY!!
+# DON'T JUST USE THESE VALUES INDISCRIMINATELY!!!
+# Jerry's settings - Align to Run#1 from Jerry051219
+#set align = "-rotate 0.00I -0.60R 0.00A -ashift 1.50S -7.50L 0.02P"
+# The following reversal is to account for aligning anat to func
+set align = "-rotate 0.00I 0.60R 0.00A -ashift -1.50S 7.50L -0.02P"
+
+### NOTE ABOUT MINIMUM VOLUME
+# This is the minimum volume for a given cluster and is given by the output of the AlphaSim
+# program.  However, the output is given in voxels and the input for the next program is in 
+# microlitres.  To convert: mvol(uL) = [voxel_x * voxel_y * voxel_z] * (#voxels in cluster)
+
+echo "fMRI Parameters"
+echo "---------------"
+echo " "
+echo "TR: "${TR}
+echo "Number of sessions: "${nSess}
+echo "Max number of runs per session: "${maxR}
+echo "Total number of runs: "${nR}
+echo " "
+echo "Number of timepoints: "${nt}
+echo "Number of slices: "${ns}
+echo " "
+echo "Baseline volume: "${baseline}
+echo " "
+echo "Output directory: "${out_dir}
+echo "Script directory: "${script_dir}
+echo "Intermediate directory :"${int_dir}
+echo "SUMA directory :"${out_dir}SUMA
+echo "ROI directory :"${out_dir}ROI
+echo " "
+echo " "
+
+if (${start} == 0) then
+	goto part0
+endif
+if (${start} == 1) then
+	goto part1
+endif
+if (${start} == 2) then
+	goto part2
+endif
+if (${start} == 3) then
+	goto part3
+endif
+if (${start} == 4) then
+	goto part4
+endif
+if (${start} == 5) then
+	goto part5
+endif
+if (${start} == 6) then
+	goto part6
+endif
+if (${start} == 7) then
+	goto part7
+endif
+if (${start} == 8) then
+	goto part8
+endif
+if (${start} == 9) then
+	goto part9
+endif
+
+#**************** PART ZERO - Convert to AFNI ****************#
+part0:
+source ../@RSVP0_Convert2AFNI
+date
+cat ${prefix}_part0 |mail -s "AFNI_Script Part 0 - Completed" ${email}
+goto exit
+
+#**************** PART ONE - Aligning All Data ****************#
+part1:
+source ../@RSVP1_AlignData
+date
+cat ${prefix}_part1 |mail -s "RSVP_Script Part 1 - Completed" ${email}
+goto exit
+
+#**************** PART TWO - Preprocessing Data ****************#
+part2:
+source ../@RSVP2_Preprocess
+date
+cat ${prefix}_part2 |mail -s "RSVP_Script Part 2 - Completed" ${email}
+goto exit
+
+#**************** PART THREE - Concatenate all runs together ****************#
+part3:
+source ../@RSVP3_ConcatRuns
+date
+cat ${prefix}_part3 |mail -s "RSVP_Script Part 3 - Completed" ${email}
+goto exit
+
+#**************** PART FOUR - Generate HRF and stimulus files ****************#
+part4:
+source ../@RSVP4_PrepareFiles
+cat ${prefix}_part4 |mail -s "RSVP_Script Part 4 - Completed" ${email}
+goto exit
+
+#**************** PART FIVE - Multiple Regression Analysis ****************#
+part5:
+source ../@RSVP5_Deconvolve
+date
+cat ${prefix}_part5 |mail -s "RSVP_Script Part 5 - Completed" ${email}
+goto exit
+
+#**************** PART SIX - Conjunction Map Analysis ****************#
+part6:
+source ../@RSVP6_ConjunctionMap
+date
+cat ${prefix}_part6 |mail -s "RSVP_Script Part 6 - Completed" ${email}
+goto exit
+
+#**************** PART SEVEN - Compile Average Time Series Data ****************#
+part7:
+source ./@RSVP7_AverageTimeSeries_Wiggum ${prefix}_AllSessions+orig ${prefix}_Norm
+source ./@RSVP7_AverageTimeSeries_Wiggum ${prefix}_MultiReg+orig ${prefix}_Beta
+date
+cat ${prefix}_part6 |mail -s "RSVP_Script Part 7 - Completed" ${email}
+goto exit
+
+#**************** PART EIGHT - JN Paper Analysis ****************#
+part8:
+source ../@RSVP8_JN_NewAnalysis
+date
+cat ${prefix}_part6 |mail -s "RSVP_Script Part 8 - Completed" ${email}
+goto exit
+
+#**************** PART NINE - Compile Raw Time Series Data ****************#
+part9:
+source ./@RSVP9_RawTimeSeries_Wiggum ${prefix}_MultiReg+orig ${prefix}_Beta
+source ./@RSVP9_RawTimeSeries_Wiggum ${prefix}_AllSessions+orig ${prefix}_Norm
+date
+cat ${prefix}_part6 |mail -s "RSVP_Script Part 7 - Completed" ${email}
+goto exit
+
+
+
+exit:
+

@@ -1,0 +1,123 @@
+#!/bin/tcsh
+# @Rafal_Human2
+# by AHB, started May 2013
+set version = 1.28-06-2013
+# Script to process and segment DTI data collected at Bangor
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set homedir = $PWD
+set out_dir = $PWD/output
+set omat = $PWD/omat
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/scripts # specifies location of TOPUP, etc.
+set kernel = 1 # diameter in mm of dilation
+set threshold = 5 # threshold for fdt paths in %
+set email = "andrew.bell@psy.ox.ac.uk"
+#
+# Standard Atlases
+set human_brain = ~/Documents/fMRI_Data/human_brain/human_standard.nii.gz
+#
+# Program Options
+set REV_OPTION = "y" # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*******************************"
+	echo "@Rafal_Human2 by AHB, V"$version
+	echo "*******************************"
+	echo " "
+	echo "Script for processing DTI data for the DTI SC-amygdala project (Rafal et al.)"
+	echo "This script is also specific for human data"
+	echo " "
+	echo "INPUT: @SCamyg_prepHUM"
+	echo " "
+	echo "Steps: "
+	echo "   1) Align NODIF to standard atlas"
+	echo "   2) Normalise datasets by waytotal"
+	echo "   3) Normalise datasets by waytatal maximum and threshold by 5%"
+	echo "   4) Binarise MAX valumes"
+	echo "   5) Align FDT paths to Standard Brain (fdt2standard)"
+	echo "   6) Binarise volumes aligned to standard brain"
+	echo "   7) Smooth Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"
+	echo "   8) Compile data for FDT percentages (normalised to waytotals)"
+	echo "   9) Align masks to standard masks"
+	echo " "
+endif
+
+mkdir -p $out_dir $temp_dir $omat $temp_dir
+
+foreach hum_subj (con01 con02 con04 con07 con08)
+	cd $homedir
+	echo " " 
+	echo "Analysing Human Subject "$hum_subj
+	cd $hum_subj
+	echo "..Step 1 - Correct and align structurals"
+	flirt -in ${hum_subj}_brain_flirted_2_nodif_brain.nii.gz -ref $human_brain -omat ${omat}/${hum_subj}_nodiftoStandard.mat -out ${hum_subj}_nodif2standard
+
+	echo "..Step 2 - Process Tracts:"
+	foreach tract (SC-Pul-Amyg SC-Pul SC-PulSlice-Amyg Pul-Amyg Stria)
+	echo "....Tract: "$tract
+		foreach hemi (L R)
+		echo "......Hemisphere: "$hemi
+			rm -f ${hum_subj}_${hemi}_${tract}*.nii.gz
+			echo "........Normalise datasets by Waytotal"
+			set waytotal = (`more ./tracts/${hemi}_${tract}/waytotal`)
+			fslmaths ./tracts/${hemi}_${tract}/fdt_paths.nii.gz -div $waytotal ${temp_dir}/${hum_subj}_temp1 -odt float
+			fslmaths ${temp_dir}/${hum_subj}_temp1.nii.gz -mul 100 ${hum_subj}_${hemi}_${tract}_fdt_normalisedWT_diff -odt float
+			
+			echo "........Normalise datasets by Max Value in FDT and threshold by 5%"
+			set temp = `fslstats ./tracts/${hemi}_${tract}/fdt_paths.nii.gz -R`
+			set normaliser = `echo $temp[2]`
+			fslmaths ./tracts/${hemi}_${tract}/fdt_paths.nii.gz -div $normaliser ${temp_dir}/${hum_subj}_temp1 -odt float
+			fslmaths ${temp_dir}/${hum_subj}_temp1.nii.gz -mul 100 ${hum_subj}_${hemi}_${tract}_fdtNormMAX_diff -odt float
+		
+			echo "........Threshold by "$threshold
+			fslmaths ${hum_subj}_${hemi}_${tract}_fdtNormMAX_diff -thr $threshold ${hum_subj}_${hemi}_${tract}_fdtNormMAXThres${threshold}_diff -odt float
+			
+			echo "........Binarise MAX volumes"
+			fslmaths ${hum_subj}_${hemi}_${tract}_fdtNormMAXThres${threshold}_diff -div ${hum_subj}_${hemi}_${tract}_fdtNormMAXThres${threshold}_diff ${hum_subj}_${hemi}_${tract}_fdtBinNormMAXThres${threshold}_diff -odt int
+			
+			echo "........Align FDT paths to Standard Brain (fdt2standard)"
+			flirt -in ${hum_subj}_${hemi}_${tract}_fdtNormMAX_diff -ref $human_brain -applyxfm -init ${omat}/${hum_subj}_nodiftoStandard.mat -out ${hum_subj}_${hemi}_${tract}_fdtNormMAX2Std
+			flirt -in ${hum_subj}_${hemi}_${tract}_fdtNormMAXThres${threshold}_diff -ref $human_brain -applyxfm -init ${omat}/${hum_subj}_nodiftoStandard.mat -out ${hum_subj}_${hemi}_${tract}_fdtNormMAXThres${threshold}_2Std
+			flirt -in ${hum_subj}_${hemi}_${tract}_fdtBinNormMAXThres${threshold}_diff -ref $human_brain -applyxfm -init ${omat}/${hum_subj}_nodiftoStandard.mat -out ${hum_subj}_${hemi}_${tract}_fdtBinNormMAXThres${threshold}_2Std
+	
+			#echo "...Step 7 - Smooth Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"	
+			#fslmaths ${hum_subj}_${hemi}_fdtBinNormThres${threshold}toStandard.nii.gz -kernel sphere $kernel -dilM ${hum_subj}_${hemi}_fdtBinNormThres_${kernel}mmSphere_standard -odt int
+		
+			#echo "...Step 8 - Compile data for FDT percentages (normalised to waytotals)"
+			#fslstats ${hum_subj}_${hemi}_sc_amyg_fdt_normalisedWT_diff.nii.gz -M > ${hum_subj}_${hemi}_fdt_percentWT		
+		end
+		
+		fslmaths ${hum_subj}_L_${tract}_fdtNormMAX2Std.nii.gz -add ${hum_subj}_R_${tract}_fdtNormMAX2Std.nii.gz ${hum_subj}_Both_${tract}_fdtNormMAX_ToStd
+		fslmaths ${hum_subj}_L_${tract}_fdtNormMAXThres${threshold}_2Std.nii.gz -add ${hum_subj}_R_${tract}_fdtNormMAXThres${threshold}_2Std.nii.gz ${hum_subj}_Both_${tract}_fdtNormMAXThres${threshold}_ToStd
+		fslmaths ${hum_subj}_L_${tract}_fdtBinNormMAXThres${threshold}_2Std.nii.gz -add ${hum_subj}_R_${tract}_fdtBinNormMAXThres${threshold}_2Std.nii.gz ${hum_subj}_Both_${tract}_fdtBinNormMAXThres${threshold}_ToStd
+	end
+	
+	echo "..Step 3 - Align masks to standard space"
+	cd ./masks_diff
+	foreach mask (`ls *.nii*`)
+		set newmask = $mask:r
+		set newnewmask = $newmask:r # need to remove two extensions
+		flirt -in $mask -ref $human_brain -applyxfm -init  ${omat}/${hum_subj}_nodiftoStandard.mat -out ${homedir}/${hum_subj}/${newnewmask}_align2std
+	end
+	cd ${homedir}/${hum_subj}
+	
+	# Combine Masks and Tracts across hemispheres
+	fslmaths ${hum_subj}_LSC_reg_corr_align2std.nii.gz -add ${hum_subj}_RSC_reg_corr_align2std.nii.gz ${hum_subj}_SC_ToStd
+	fslmaths ${hum_subj}_Lpulv_reg_corr_align2std.nii.gz -add ${hum_subj}_Rpulv_reg_corr_align2std.nii.gz ${hum_subj}_PULV_ToStd
+	fslmaths ${hum_subj}_Lamyg_reg_corr_align2std.nii.gz -add ${hum_subj}_Ramyg_reg_corr_align2std.nii.gz ${hum_subj}_AMYG_ToStd
+	mv ${hum_subj}*_ToStd.nii.gz ${out_dir}
+end
+
+
+
+
+exit:

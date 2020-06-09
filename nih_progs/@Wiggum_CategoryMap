@@ -1,0 +1,43 @@
+#!/bin/tsch
+# @Wiggum_CategoryMap
+# by AHB, May 2010
+# Program to create Wiggum category map, post Neuron Submission
+# Each category is defined by a single contrast (faces vs. 3 others) as opposed to conjunction
+# Theorectically, the results should be identical
+
+
+# 4.890 10-6
+# 5.323 10-7
+# 5.733 10-8
+# 6.107 10-9
+# 6.419 10-10
+# 6.773 10-11
+
+
+rm -f ./Wiggum_temp* ./Wiggum_CategoryMap*
+# Faces
+3dmerge -1noneg -1clust 0 20 -1dindex 50 -1tindex 50 -1thres 5.5 -prefix ./Wiggum_temp1 Wiggum_bucket+orig
+
+# Bodyparts
+3dmerge -1noneg -1clust 0 20 -1dindex 59 -1tindex 59 -1thres 6.107 -prefix ./Wiggum_temp2 Wiggum_bucket+orig
+
+# Objects
+3dmerge -1noneg -1clust 0 20 -1dindex 56 -1tindex 56 -1thres 6.419 -prefix ./Wiggum_temp3 Wiggum_bucket+orig
+
+# Places
+3dmerge -1noneg -1clust 0 20 -1dindex 53 -1tindex 53 -1thres 6.419 -prefix ./Wiggum_temp4 Wiggum_bucket+orig
+
+
+
+3dcalc -a ./Wiggum_temp1+orig -b ./Wiggum_temp2+orig -c ./Wiggum_temp3+orig -d ./Wiggum_temp4+orig \
+-expr '(a/a)+((b/b)*8)+((c/c)*4)+((d/d)*2)' -prefix Wiggum_CategoryMap
+
+# Align to WiggumCaret_Anat_rh+orig
+
+rm -f Wiggum_CatMap_align2caret* Wiggum_*3_align2caret*
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_CatMap_align2caret Wiggum_CategoryMap+orig
+
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_FACES3_align2caret Wiggum_temp1+orig
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_BODY3_align2caret Wiggum_temp2+orig
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_OBJECTS3_align2caret Wiggum_temp3+orig
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_PLACES3_align2caret Wiggum_temp4+orig

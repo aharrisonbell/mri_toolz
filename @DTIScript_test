@@ -1,0 +1,154 @@
+#!/bin/tcsh
+# @DTIScript (aka @HopeBrainHasWhiteMatter)
+# by AHB, started August 2011
+# Version 1.0
+# Script to process and segment DTI data collected at BSB
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+# This script also assumes the data have been collected in a certain way (e.g., B0 fields at beginning
+# of each run, 60 dirs split into 3 files + 8 dir, alternating phase-encoding dirs, etc.).  If your
+# data have been collected in a different way, you may have to change the script.
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set nii_dir = $PWD/new_nii
+set out_dir = $PWD/DTI_data
+set temp_dir = $PWD/temp
+set scriptdir = ~/Desktop/FMRI_Data/scripts # specifies location of TOPUP, etc.
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set DTI_label = DTImosaicb100010mm
+set PE_axis = 2 # (x,y,z) = (LR/parallel to B0/up-down) therefore in monkey space = (LR/IS/PA)
+#
+# Program Options
+set REV_OPTION = "n"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "***************************"
+	echo "@DTIScript by AHB, Aug2011"
+	echo "***************************"
+	echo " "
+	echo "Script for processing DTI data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, etc.  If the script doesn't work,"
+	echo "try altering the default values (edit this script)."
+	echo " "
+	echo "INPUT: @DTI_Script <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data (e.g., MonkeyDate).  This has no impact on the program,"
+	echo "                it simply labels the data in the directory."
+	echo " step (optional): perform step X where..."
+	echo "   1) Extract and merge B0 images"
+	echo "   2) Run TOPUP to generate correction"
+	echo "   3) Apply TOPUP"
+	echo "   4)"
+	echo "   5)"
+	echo "   6)"
+	echo "   7)"
+	echo "Note: Default is to perform all steps."
+	echo " "
+	echo "Credits: props to FSL Group/FMRIB/KM/SJ for recipe, etc."
+	echo "         TOPUP - JA (FMRIB)"
+	goto exit
+endif
+
+set session_name = $1
+if ($#argv == 1) then
+	set step = 0
+else
+	set step = $2
+endif
+mkdir $out_dir $temp_dir
+mkdir $nii_dir/temp
+
+# Step 1: Extract B0 images from individual DTI volumes
+# Explanation: Each of the (4) DTI volumes (in both PE directions) contain B0 directions, which 
+# must be extracted and merged.  For some reason, the B0 from '8dirs' files are not included.  
+if ($step == 1 || $step == 0) then
+	cd $nii_dir
+	rm -f $out_dir/acquisition_parameters.txt
+	set merge_com = "fslmerge -t $out_dir/${session_name}_mergedB0s "
+	foreach fn (`ls C*${DTI_label}*.nii*`) 
+	
+		# Correct Orientation
+		#cp $fn ./temp/temp.nii.gz
+		#fslorient -deleteorient ./temp/temp.nii.gz
+		#fslswapdim ./temp/temp.nii.gz x y z ./temp/temp2.nii.gz
+		#fslorient -setqformcode 1 ./temp/temp2.nii.gz
+		#cp ./temp/temp2.nii.gz C_$fn
+	
+		# Determine number of directions (so not to include B0 only - 8dirs)
+		set dim4=`fslval $fn dim4` # Identifies number of directions (dim4-1)
+		if ($dim4 > 9) then
+			echo "Extract B0 volume from "$fn
+			fslroi $fn $temp_dir/b0_${fn} 0 1 # remove B-fieldsim1
+			
+			# Add file to list of volumes to merge
+			set merge_com = "$merge_com $temp_dir/b0_${fn}" # compiles list of B0 files to merge
+
+			echo $PE_axis
+			# Add PEdata to topup --datain textfile
+			if ($PE_axis == 1) then
+ 				set pe_dir = `echo $fn | sed 's/.*LR.*/1/g' | sed 's/.*RL.*/-1/g'`
+ 				echo "$pe_dir 0 0 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+ 			if ($PE_axis == 2) then
+ 				set pe_dir = `echo $fn | sed 's/.*HF.*/1/g' | sed 's/.*FH.*/-1/g'`
+ 				echo "0 $pe_dir 0 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+ 			if ($PE_axis == 3) then
+ 				set pe_dir = `echo $fn | sed 's/.*HF.*/1/g' | sed 's/.*FH.*/-1/g'`
+ 				echo "0 0 $pe_dir 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+			
+		endif
+	end
+	$merge_com # Execute merge command
+	echo "Merged file created in "$out_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_mergedB0s.nii.gz &
+	endif
+endif
+
+goto exit
+
+# Step 2: Run TOPUP to generate correction
+if ($step == 2 || $step == 0) then
+	${scriptdir}/topup --imain=$out_dir/${session_name}_mergedB0s \
+		--datain=$out_dir/acquisition_parameters.txt \
+		--config=$scriptdir/b02b0.cnf \
+		--out=$out_dir/${session_name}_TopUp_out --verbose
+endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit:
+
+
+
+
+

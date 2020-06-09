@@ -1,0 +1,355 @@
+#!/bin/tcsh -f
+# @MGH3_GROUP Script
+# Started Feb.2006, Latest update March 1, 2006
+# This script is for analyzing data across session
+# It assumes that data has ALREADY been converted to MGH1 format
+# and that the initial MGH1 (unprocessed data) are all located in the
+# same directory.
+#
+# Furthermore, it assumes that ALL the runs feature the same prefix root.
+# For example, let's say Monkey X has three sessions:
+# monkX060101, monkX060102, monkX060103
+# The root prefix would be monkX0601...
+# This allows the program to analyze all runs
+
+if ($#argv == 0) then
+	echo " "
+	echo "-----------------------------------------------"
+	echo "@MGH3_GROUP script Ver.1.0 by AHB, Feb 2006"
+	echo "-----------------------------------------------"
+	echo " "
+	echo "Data must already be in MGH1 format for this script to function."
+	echo "Run this script from the directory where all data is located."
+	echo " "
+	echo "NOTE: This script depends on several variables that must be hard-coded"
+	echo "within the script itself.  These variables (which include things like"
+	echo "number of sessions, number of runs, etc.) differ from monkey to monkey"
+	echo "and so it is STRONGLY recommended that a different version of this script"
+	echo "is saved for each analysis."
+	echo " "
+	echo "NOTE: This script also assumes that the following files are located in"
+	echo "in the same directory as the incoming data:"
+	echo "    <session prefix>.stim   -- contains the stimulus outline for ALL runs"
+	echo "    <session prefix>.censor -- containining the censor list for ALL runs"
+	echo "    all_concat.1D           -- lists the breakpoint in runs for ALL SESSIONS"
+	echo " "
+	echo "INPUT: MGH1_GROUP <step>"
+	echo " "
+	echo "where:"
+	echo "step: perform step X where..."
+	echo "          Step 1 = Align all EPI runs to base volume (must be specified)"
+	echo "          Step 2 = Preprocessing of each run"
+	echo "          Step 3 = Generate HRF and Stimulus Files"
+	echo "          Step 4 = Concatenate All Runs (this is where to eliminate bad runs)"
+	echo "          Step 5 = Multiple Regression Analysis"
+	echo "	        Step 6 = Prepare Time Series Datasets"
+	echo " 	        Step 7 = Prepare Venn Diagrams, Conjunction Maps, and ROI Masks"
+	echo "		Step 8 = Use FLIRT, 3drotate, and SUMA to align functional and anatomical datasets"
+	echo "	   (optional, default: '1')"	
+	echo " "
+	goto exit
+endif
+
+set start = $1
+set out_dir = $PWD/
+mkdir ${out_dir}scripts
+mkdir ${out_dir}intermediate
+
+set script_dir = $PWD/scripts
+set int_dir = $PWD/intermediate
+
+# STEP 0.0 - Set up parameters and variables
+############################################################################
+# STEP 0.0 - Hard-coding variables
+# This pareliminary section is where all the hard-coded variables can be set.
+# Once these variables have been set, no further changes to the remaining code
+# should be necessary.
+############################################################################
+
+###################
+# fMRI Parameters #
+###################
+
+set input_prefix = "46000"		# Input Prefix
+set prefix = "Wiggum"			# Prefix
+set TR = 2500   			# TR (in ms)
+set nSess = 4	   			# Number of sessions
+set maxR = 34				# Maximum number of runs per session
+set nR = 74				# Total number of runs across all sessions
+set nt = 90				# Number of timepoints per run
+set ns = 35				# Number of slices
+set Xdir = "R-L"			# Direction of X Plane
+set Ydir = "S-I"			# Direction of Y Plane
+set Zdir = "P-A"			# Direction of Z Plane
+set ipr = 1.25				# Inplane resolution
+set bpr = 1.9				# Between plane resolution
+set basesess = "Wigg070124"		# Session for baseline volume
+set baserun = 09			# Run from BASESESS for alignment
+set baseline = ${basesess}"_1_"${baserun}"+orig"
+set listsess = "Wigg070124 Wigg070314s"
+set email = "bellah@mail.nih.gov"	# Email address for progress reports
+set sumaprefix = "NIH_Wiggum"	        # Prefix for SUMA files
+set voxel_x = 1.25			# AlphaSim: voxel dimension in X (R-L) plane
+set voxel_y = 1.25			# AlphaSim: voxel dimension in Y (S-I) plane
+set voxel_z = 1.9			# AlphaSim: voxel dimension in Z (A-P) plane
+set matrix_x = 64			# AlphaSim: matrix dimension in X (R-L) plane
+set matrix_y = 64
+set pthr = 0.01				# AlphaSim: individual voxel significance level
+set iter = 1000				# AlphaSim: number of simulations
+set anat = "WiggumHRanat"
+set thresbrik = 78 			# Threshold Brik for AllConds - Scrambled (t-stat)
+set thresall = 19.52			# Threshold Level (3,847 = p<0.05, Full F-stat)
+set rmm = 0				# Voxel Distance (0 = six nearest neighbours)
+set mvol = 20				# Minimum Volume (in uL)or negative is voxels (6=11.7uL)
+set maxroi = 12
+set Aclip = -5
+set Pclip = -10				# Number of slices to clip from the anterior edge
+set teoclip = 2
+
+### NOTE ABOUT CONNECTIVITY RADIUS:
+# Connected by a face =>  	rmm = voxel_x
+# Connected by an edge => 	rmm = sqrt[(voxel_x)^2 + (voxel_y)^2]
+# Connected by a corner =>	rmm = sqrt[(voxel_z)^2 + (sqrt[(voxel_x)^2 + (voxel_y)^2])^2]
+
+### NOTE: The following is the alignment parameters necessary to align the output
+# from the deconvolution to the HiRes anatomical.  THIS IS DIFFERENT FOR EACH MONKEY!!
+# DON'T JUST USE THESE VALUES INDISCRIMINATELY!!!
+# Jerry's settings - Align to Run#1 from Jerry051219
+#set align = "-rotate 0.00I -0.60R 0.00A -ashift 1.50S -7.50L 0.02P"
+# The following reversal is to account for aligning anat to func
+set align = "-rotate 0.00I 0.60R 0.00A -ashift -1.50S 7.50L -0.02P"
+
+### NOTE ABOUT MINIMUM VOLUME
+# This is the minimum volume for a given cluster and is given by the output of the AlphaSim
+# program.  However, the output is given in voxels and the input for the next program is in 
+# microlitres.  To convert: mvol(uL) = [voxel_x * voxel_y * voxel_z] * (#voxels in cluster)
+
+echo "***************************************"
+echo "**    @MGH3_Stewie Face Place Study   **"
+echo "**  script Ver.1.0 by AHB, Jan 2006  **"
+echo "***************************************"
+echo " "
+echo "fMRI Parameters"
+echo "---------------"
+echo " "
+echo "TR: "${TR}
+echo "Number of sessions: "${nSess}
+echo "Max number of runs per session: "${maxR}
+echo "Total number of runs: "${nR}
+echo " "
+echo "Number of timepoints: "${nt}
+echo "Number of slices: "${ns}
+echo " "
+echo "Baseline volume: "${baseline}
+echo " "
+echo "Output directory: "${out_dir}
+echo "Script directory: "${script_dir}
+echo "Intermediate directory :"${int_dir}
+echo "SUMA directory :"${out_dir}SUMA
+echo "ROI directory :"${out_dir}ROI
+echo " "
+echo " "
+
+if (${start} == 0) then
+	goto part0
+endif
+if (${start} == 1) then
+	goto part1
+endif
+if (${start} == 2) then
+	goto part2
+endif
+if (${start} == 3) then
+	goto part3
+endif
+if (${start} == 4) then
+	goto part4
+endif
+if (${start} == 5) then
+	goto part5
+endif
+if (${start} == 6) then
+	goto part6
+endif
+if (${start} == 7) then
+	goto part7
+endif
+if (${start} == 8) then
+	goto part8
+endif
+if (${start} == 9) then
+	goto part9
+endif
+if (${start} == 10) then
+	goto part10
+endif
+if (${start} == 11) then
+	goto part11
+endif
+if (${start} == 12) then
+	goto part12
+endif
+if (${start} == 14) then
+	goto part14
+endif
+if (${start} == R) then
+	goto partR
+endif
+
+#**************** PART ZERO - Convert to AFNI ****************#
+part0:
+
+source ../@MGH3_Part0_Convert2AFNI
+
+date
+cat ${prefix}_part0 |mail -s "AFNI_Script Part 0 - Completed" ${email}
+goto exit
+
+#**************** PART ONE - Aligning All Data ****************#
+part1:
+
+source ../@MGH3_Part1_AlignData
+
+date
+cat ${prefix}_part1 |mail -s "MGH1_Script Part 1 - Completed" ${email}
+goto exit
+
+#**************** PART TWO - Preprocessing Data ****************#
+part2:
+
+source ../@MGH3_Part2_Preprocess
+
+date
+cat ${prefix}_part2 |mail -s "MGH1_Script Part 2 - Completed" ${email}
+goto exit
+
+#**************** PART THREE - Concatenate all runs together ****************#
+part3:
+
+source ../@MGH3_Part3_ConcatRuns
+
+date
+cat ${prefix}_part3 |mail -s "MGH1_Script Part 3 - Completed" ${email}
+goto exit
+
+#**************** PART FOUR - Generate HRF and stimulus files ****************#
+part4:
+
+source ../@MGH3_Part4_PrepareFiles
+
+cat ${prefix}_part4 |mail -s "MGH1_Script Part 4 - Completed" ${email}
+goto exit
+
+#**************** PART FIVE - Multiple Regression Analysis ****************#
+part5:
+
+source ../@MGH3_Part5_Deconvolve
+
+date
+cat ${prefix}_part5 |mail -s "MGH1_Script Part 5 - Completed" ${email}
+goto exit
+
+#**************** PART SIX - Prepare Time Series Datasets ****************#
+part6:
+date
+echo "Step 6 - Conduct Time Series Analysis"
+
+# 6.1 - Generate time series data from NORMALIZED dataset
+source @MGH3_Part6_TimeSeries_Wiggum ${prefix}_AllSessions+orig ${prefix}_Norm > ${prefix}_part6.1
+
+# 6.2 - Generate time series data from Multiple Regression Output dataset
+source @MGH3_Part6_TimeSeries_Wiggum ${prefix}_MultiReg+orig ${prefix}_MultiReg > ${prefix}_part6.2
+
+# 6.3 - Remove temporary files
+rm -f ${prefix}_temp_*
+
+echo "Done."
+
+date
+cat ${prefix}_part6.1 | mail -s "MGH1_Script Part 6.1(Time Series Analysis)- Completed" ${email}
+cat ${prefix}_part6.2 | mail -s "MGH1_Script Part 6.2 (Time Series Analysis)- Completed" ${email}
+goto exit
+
+#**************** PART SEVEN - Compile timeseries data for analysis ****************#
+part7:
+
+#source ./@MGH3_Part7_CompileDataROC_Stewie ${prefix}_AllSessions+orig ${prefix}_Norm > ${prefix}_part7.1
+#source ./@MGH3_Part7_CompileDataROC_Stewie ${prefix}_MultiReg+orig ${prefix}_MultiReg > ${prefix}_part7.2
+
+date
+cat ${prefix}_part7.1 | mail -s "MGH3_Script Part 7.1(Time Series Compilation)- Completed" ${email}
+cat ${prefix}_part7.2 | mail -s "MGH3_Script Part 7.2 (Time Series Compilation)- Completed" ${email}
+goto exit
+
+#**************** PART EIGHT - Generate Analysis-quality Masks (Unaligned) ****************#
+part8:
+
+source ../@MGH3_Part8_AnalysisMasks_noMION
+
+date
+cat ${prefix}_part8.1 |mail -s "MGH1_Script Part 8.1 (Generate Analysis Masks) - Completed" ${email}
+cat ${prefix}_part8.2 |mail -s "MGH1_Script Part 8.2 (Generate Analysis Masks - Specific) - Completed" ${email}
+goto exit
+
+#**************** PART NINE - Generate Figure-quality Masks (Aligned) ****************#
+part9:
+
+source ../@MGH3_Part9_FigureMasks
+
+date
+echo "Done Part 9 - " ${prefix}|mail -s "MGH1_Script Part 9 (Generate Figure Masks) - Completed" ${email}
+goto exit
+
+
+#**************** PART TEN - Compile Data for ROC analysis ****************#
+part10:
+
+source ./@MGH1_Part10_CompileDataROC_Jerry ${prefix}_AllSessions+orig ${prefix}_Norm
+
+date
+echo "Done Part 10 - " ${prefix}|mail -s "MGH1_Script Part 10 (Compile ROC data) - Completed" ${email}
+goto exit
+
+#**************** PART ELEVEN - Paper-specific Analysis ****************#
+part11:
+
+source ../@MGH1_Part11_PaperAnalysis 
+#> ${prefix}_part11
+
+date
+cat ${prefix}_part11 |mail -s "MGH1_Script Part 11 (Paper Analysis) - Completed" ${email}
+goto exit
+
+#**************** PART TWELVE - Post JN Submission Analysis ****************#
+part12:
+
+source ../@MGH3_Part12_PostJN_Analysis
+
+date
+cat ${prefix}_part11 |mail -s "MGH1_Script Part 12 (Paper Analysis) - Completed" ${email}
+goto exit
+
+#**************** PART Fourteen - Paper-specific Analysis ****************#
+part14:
+
+source ../@MGH3_Part14_ROCAnalysis_postJN
+
+date
+cat ${prefix}_part14 |mail -s "MGH1_Script Part 11 (Paper Analysis) - Completed" ${email}
+goto exit
+
+#**************** PART R - RSVP Paper-specific Analysis ****************#
+partR:
+
+source ../@RSVP_PaperAnalysis
+
+date
+cat ${prefix}_partR |mail -s "RSVP_PaperAnalysis - Completed" ${email}
+goto exit
+exit:
+
+
+
+
+exit:
+

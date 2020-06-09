@@ -1,0 +1,19 @@
+#!/bin/tsch
+# @Wiggum_CategoryMap
+# by AHB, May 2010
+
+# Align to WiggumCaret_Anat_rh+orig
+
+
+
+
+
+
+rm -f Wiggum_CatMapWholeBrain_align2caret*
+
+3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_CatMapWholeBrain_align2caret Wiggum_AllConditions3_WholeBrain_AltMethod+orig
+
+#3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_FACES3_align2caret Wiggum_temp1+orig
+#3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_BODY3_align2caret Wiggum_temp2+orig
+#3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_OBJECTS3_align2caret Wiggum_temp3+orig
+#3drotate -NN -rotate 0I 4R 0A -ashift 0.07S 3.50L 3.00P -prefix Wiggum_PLACES3_align2caret Wiggum_temp4+orig

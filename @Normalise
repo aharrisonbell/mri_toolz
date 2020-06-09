@@ -1,0 +1,173 @@
+#!/bin/tcsh
+# @Normalise
+# by JD, 
+set version = 1.2.2013
+# This script normalizes pre and post injection scans to reduce intensity variation
+# apart from the manganese signal as much as possible, mainly due to inhomogeneity
+# and coil placement differences between scans
+#This script assumes @MEMRIScript has been run until at least step 5
+#Run this script from ~/Documents/MEMRI
+
+ 
+#########################################################################################
+## SET UP VARIABLES HERE
+set curr_mask1 = /Users/OldJD/Documents/MEMRI/MI00136/memri/MI00136_hrMn_anatmask_fix.nii.gz
+set session_name = MI00175
+set data_out_label = hrMn     #hrMn in this case
+set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "john.daley@balliol.ox.ac.uk"
+set step = $1
+set curr_thr = $2    #threshold for subtraction in step 3.1/5.1 recommended to try 0.1 the first time, seems to be local minimum at injection site
+#########################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "************************************"
+	echo "@Normalise by JD, V."$version
+	echo "************************************"
+	echo " "
+	echo "Script for normalising pre and post Me injection scans."
+	echo " "
+	echo "INPUT: @@Normalise <step> <threshold>"
+	echo " "
+endif
+
+mkdir -p $PWD/$session_name/memri/normalise
+set out_dir = $PWD/$session_name/memri/normalise
+
+set analysis_dir = $PWD/$session_name/memri
+cd $analysis_dir
+
+echo " "
+echo "************************************"
+echo "@@Normalise by JD, V."$version
+echo "************************************"
+echo " "
+echo " "
+
+if ($step =~ *1* || $step == 0) then
+	#This step is necessary because post-injection have large FOV
+	echo "Step 1: Aligning (flirt) stripped post-injection scan with merged baselines" ${session_name}_${data_out_label}_StrippedAnat_native.nii.gz
+	flirt -in ${session_name}_${data_out_label}_StrippedAnat_native.nii.gz -ref $analysis_dir/${session_name}_${data_out_label}_mergedBaselines.nii.gz -datatype float \
+	-out $out_dir/${session_name}_${data_out_label}_StrippedAnat_native_flirted_to_baseline
+	fslview $analysis_dir/${session_name}_${data_out_label}_mergedBaselines.nii.gz $out_dir/${session_name}_${data_out_label}_StrippedAnat_native_flirted_to_baseline &
+endif
+
+if ($step =~ *2* || $step == 0) then
+	echo "Step 2.1: Normalising Post Injection "${session_name}_${data_out_label}_StrippedAnat_native_flirted_to_baseline.nii.gz
+	set mean1 = `fslstats $out_dir/${session_name}_${data_out_label}_StrippedAnat_native_flirted_to_baseline.nii.gz -M`
+	echo "$mean1"
+	fslmaths $out_dir/${session_name}_${data_out_label}_StrippedAnat_native_flirted_to_baseline -div $mean1 $out_dir/${session_name}_${data_out_label}_Norm1
+	
+	echo "Step 2.2: Normalising Merged Baselines "${session_name}_${data_out_label}_mergedBaselines.nii.gz
+	set mean2 = `fslstats $analysis_dir/${session_name}_${data_out_label}_mergedBaselines.nii.gz -M`
+	echo "$mean2"
+	fslmaths $analysis_dir/${session_name}_${data_out_label}_mergedBaselines -div $mean2 $out_dir/${session_name}_${data_out_label}_Norm2
+	fslview $out_dir/${session_name}_${data_out_label}_Norm1 $out_dir/${session_name}_${data_out_label}_Norm2 &
+endif
+
+if ($step =~ *3* || $step == 0) then
+	#subtract normalised preinjection (norm2) from normalised post injection (norm1)
+	#and view diff1. This gives the difference image between pre and post injections. 
+	#These differences will be due to (1) manganese (2) random signal variation
+	#Normalizing is supposed to reduce type 2 signal. By masking out manganese I am trying to 
+	#isolate the random signal and normalize that, to reduce it as much as possible.
+	echo "Step 3.1: Subtraction " $out_dir/${session_name}_${data_out_label}_Norm1 - $out_dir/${session_name}_${data_out_label}_Norm2
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm1 -sub $out_dir/${session_name}_${data_out_label}_Norm2 $out_dir/${session_name}_${data_out_label}_diff1
+	fslview $analysis_dir/${session_name}_${data_out_label}_mergedBaselines $out_dir/${session_name}_${data_out_label}_diff1 &
+endif
+
+if ($step =~ *4* || $step == 0) then
+	echo "Step 4.1: Threshold to mask out manganese "      #this step requires input of threshold at $2
+	#everything below this threshold will be set to zero, ie. that information is lost
+	# by setting threshold at the local minima at the injection site we should have ONLY Me signal remaining
+	# we then create Mang_mask1 that captures that information
+	fslmaths $out_dir/${session_name}_${data_out_label}_diff1 -thr ${curr_thr} $out_dir/${session_name}_${data_out_label}_Mang_mask1
+	echo "Step 4.2: Subtract manganese mask from current mask" 
+	#mang_mask1 contains only Me signal, by subtracting it from existing masked (manually fixed)
+	# we create a fixed mask that EXCLUDES the manganese signal, creating curr_mask2
+	# which will then be used to normalise the brain in step 5.
+	fslmaths $curr_mask1 -sub $out_dir/${session_name}_${data_out_label}_Mang_mask1 -bin $out_dir/${session_name}_${data_out_label}_curr_mask2
+	fslview $curr_mask1 $out_dir/${session_name}_${data_out_label}_curr_mask2 $out_dir/${session_name}_${data_out_label}_Mang_mask1 &
+endif
+
+if ($step =~ *5* || $step == 0) then
+	echo "Step 5.1: Normalising Post Injection, Second iteration, with manganese mask"
+	#by using curr_mask2 here we are excluding what we believe to be all of the Me signal
+	# the upshot is a REDUCTION OF THE MEAN intensity of the postinjection scan
+	# the consequence of this is that the mean will be closer to the preinjection mean
+	# reducing the amount of signal variability between the two and reducing noise in diff2
+	set mean3 = `fslstats $out_dir/${session_name}_${data_out_label}_Norm1 -k $out_dir/${session_name}_${data_out_label}_curr_mask2 -M`
+	echo "$mean3"
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm1 -mas $out_dir/${session_name}_${data_out_label}_curr_mask2 $out_dir/${session_name}_${data_out_label}_Norm1_memasked
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm1_memasked -div $mean3 $out_dir/${session_name}_${data_out_label}_Norm3
+	
+	echo "Step 5.2: Normalising Merged baseline Injection, Second iteration"
+	set mean4 = `fslstats $out_dir/${session_name}_${data_out_label}_Norm2 -M`
+	#The purpose of masking is to reduce the Me signal, leaving only variation in 
+	#random intensity to normalise. There is no Me in baseline, and so no reason to mask
+	echo "$mean4" 
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm2 -div $mean4 $out_dir/${session_name}_${data_out_label}_Norm4
+	fslview $out_dir/${session_name}_${data_out_label}_Norm3 $out_dir/${session_name}_${data_out_label}_Norm4 &
+endif
+
+if ($step =~ *6* || $step == 0) then
+	# The reported means are very similar at this point (mean3 = 0.99, mean4 = 0.95; recall mean1=0.67 mean2=2.8) 
+	# so there should not be a lot of variation after subtraction. Look at the intensity values
+	# of diff2 to determine.
+	echo "Step 6.1: Subtraction " $out_dir/${session_name}_${data_out_label}_Norm3 - $out_dir/${session_name}_${data_out_label}_Norm4
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm3 -sub $out_dir/${session_name}_${data_out_label}_Norm4 $out_dir/${session_name}_${data_out_label}_diff2
+	fslview $analysis_dir/${session_name}_${data_out_label}_mergedBaselines $out_dir/${session_name}_${data_out_label}_diff1 $out_dir/${session_name}_${data_out_label}_diff2 &
+endif
+
+if ($step =~ *7* || $step == 0) then	
+	# Viewing diff2 can see that not all Me at injection site captured by Mang_mask1
+	# by iterating the process with newly determined threshold should capture more 
+	#suggested curr_thr of 0.4, local minima at manganese injection site in diff2
+	# everything below this threshold will be set to zero, ie. that information is lost
+	# by setting threshold at the local minima at the injection site we should have ONLY ME signal remaining
+	# we then create Mang_mask1 that captures that information
+	echo "Step 7.1: Threshold to mask out manganese " 
+	fslmaths $out_dir/${session_name}_${data_out_label}_diff2 -thr $curr_thr $out_dir/${session_name}_${data_out_label}_Mang_mask2
+	echo "Step 7.2: Subtract manganese mask from current mask" 
+	#mang_mask2 should contain only Me signal, by subtracting it from existing masked curr_mask2
+	# we create a fixed mask that EXCLUDES even more of the mang_signal, creating curr_mask3
+	# which will then be used to normalise the brain in step 8.
+	fslmaths $out_dir/${session_name}_${data_out_label}_curr_mask2 -sub $out_dir/${session_name}_${data_out_label}_Mang_mask2 $out_dir/${session_name}_${data_out_label}_curr_mask3
+	#The step below was added in because I was having problems with the -bin option in the call above
+	# the subtraction wasn't working and curr_mark2 was exactly the same as curr_mask3. This solves the problem
+	# but I realize it's probably not the best way to do it.
+	fslmaths $out_dir/${session_name}_${data_out_label}_curr_mask3 -thr 1 $out_dir/${session_name}_${data_out_label}_curr_mask4
+	#By viewing mang_mask1 vs mang_mask2 can see that clearly more Me signal has been captured
+	#curr_mask4 excludes what appears to be most of the manganese signal
+	fslview  $out_dir/${session_name}_${data_out_label}_curr_mask2 $out_dir/${session_name}_${data_out_label}_curr_mask3 $out_dir/${session_name}_${data_out_label}_curr_mask4 $out_dir/${session_name}_${data_out_label}_Mang_mask1 $out_dir/${session_name}_${data_out_label}_Mang_mask2 &
+endif
+
+if ($step =~ *8* || $step == 0) then
+	echo "Step 8.1: Normalising Post Injection, third iteration"
+	set mean5 = `fslstats $out_dir/${session_name}_${data_out_label}_Norm3 -k $out_dir/${session_name}_${data_out_label}_curr_mask4 -M`
+	echo "$mean5"
+	#fslmaths $out_dir/${session_name}_${data_out_label}_Norm1 -mas $out_dir/${session_name}_${data_out_label}_curr_mask2 $out_dir/${session_name}_${data_out_label}_Norm1_memasked
+	#fslmaths $out_dir/${session_name}_${data_out_label}_Norm1_memasked -div $mean3 $out_dir/${session_name}_${data_out_label}_Norm3
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm3 -mas $out_dir/${session_name}_${data_out_label}_curr_mask4 $out_dir/${session_name}_${data_out_label}_Norm5_memasked
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm5_memasked -div $mean5 $out_dir/${session_name}_${data_out_label}_Norm5 &
+	
+	set mean6 = `fslstats $out_dir/${session_name}_${data_out_label}_Norm4 -M`
+	echo "$mean6"
+	#fslmaths $out_dir/${session_name}_${data_out_label}_Norm2 -div $mean4 $out_dir/${session_name}_${data_out_label}_Norm4
+	#fslview $out_dir/${session_name}_${data_out_label}_Norm3 $out_dir/${session_name}_${data_out_label}_Norm4 &
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm4 -div $mean6 $out_dir/${session_name}_${data_out_label}_Norm6 
+	fslview $out_dir/${session_name}_${data_out_label}_Norm5 $out_dir/${session_name}_${data_out_label}_Norm6 &
+	#the means are by this point very similar, both 0.99
+	#variations between norm5 and norm6 are generally <0.1, except where ME has been masked
+endif
+
+if ($step =~ *9* || $step == 0) then
+	echo "Step 9.1: Subtraction " $out_dir/${session_name}_${data_out_label}_Norm5 - $out_dir/${session_name}_${data_out_label}_Norm6
+	fslmaths $out_dir/${session_name}_${data_out_label}_Norm5 -sub $out_dir/${session_name}_${data_out_label}_Norm6 $out_dir/${session_name}_${data_out_label}_diff3
+	fslview $analysis_dir/${session_name}_${data_out_label}_mergedBaselines $out_dir/${session_name}_${data_out_label}_diff1 $out_dir/${session_name}_${data_out_label}_diff2 $out_dir/${session_name}_${data_out_label}_diff3 &
+endif	
+	
+	#this seems to have worked well, there is little to no manganese signal and the intensity
+	#values are tiny, maximum of 0.3, indicating the intensity of the two images is quite close
+exit:

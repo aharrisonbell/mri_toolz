@@ -1,0 +1,93 @@
+#!/bin/tcsh
+# @Rafal_Human_Paper - Pick up before publication
+# by AHB, started May 2013
+set version = 1.24-09-2013
+# Script to process and segment DTI data collected at Bangor
+
+####################################################################################################
+
+set subject = $1
+set threshold = 10
+set kernel = 2
+set amyg_kernel = 4
+set pulv_kernel = 4
+set SC_kernel = 2
+
+if ($#argv == 0) then
+	set subject_list = "Subject2 Subject3 Subject6 Subject7 Subject8 Subject10 Subject11"
+	set step = 12
+else
+	set subject_list = $1
+	set step = $2
+endif
+
+foreach subject (${subject_list})
+	echo "Analysing "$subject
+	cd ${subject}
+	if ($step =~ *1* || $step == 0) then
+		echo "..Step 1 - Binarise and combine masks:"
+		mkdir temp
+		fslmaths ${subject}_R_Amygdala_mask.nii.gz -bin ./temp/temp1
+		fslmaths ${subject}_L_Amygdala_mask.nii.gz -bin ./temp/temp2
+		fslmaths ./temp/temp1.nii.gz -add ./temp/temp2.nii.gz ${subject}_Amygdala.nii.gz
+		fslmaths ${subject}_Amygdala.nii.gz -kernel sphere ${amyg_kernel} -dilM ${subject}_Amygdala_${amyg_kernel}mmSphere.nii.gz
+	
+		fslmaths ${subject}_R_SC_mask.nii.gz -bin ./temp/temp1
+		fslmaths ${subject}_L_SC_mask.nii.gz -bin ./temp/temp2
+		fslmaths ./temp/temp1.nii.gz -add ./temp/temp2.nii.gz ${subject}_SC.nii.gz
+		fslmaths ${subject}_SC.nii.gz -kernel sphere ${SC_kernel} -dilM ${subject}_SC_${SC_kernel}mmSphere.nii.gz
+		
+		fslmaths ${subject}_R_Pulvinar_slice_mask.nii.gz -bin ./temp/temp1
+		fslmaths ${subject}_L_Pulvinar_slice_mask.nii.gz -bin ./temp/temp2
+		fslmaths ./temp/temp1.nii.gz -add ./temp/temp2.nii.gz ${subject}_Pulvinar.nii.gz
+		fslmaths ${subject}_Pulvinar.nii.gz -kernel sphere $pulv_kernel -dilM ${subject}_Pulvinar_${pulv_kernel}mmSphere.nii.gz
+		
+		echo "..Step 2 - Process Tracts:"
+		foreach tract (SC_Pulv_Amyg_Tract_noStria StriaTerm SC_Pulv_Amyg_Tract Amyg_Pulv_SC_Tract)
+			echo "....Tract: "$tract
+			foreach hemi (L R)
+				echo "......HemiSphere: "$hemi
+				echo "........Normalise datasets by Waytotal"
+				set waytotal = (`more ./${subject}_${hemi}_${tract}/waytotal`)
+				fslmaths ./${subject}_${hemi}_${tract}/fdt_paths.nii.gz -div $waytotal ./temp/${subject}_temp1 -odt float
+				fslmaths ./temp/${subject}_temp1.nii.gz -mul 100 ${subject}_${hemi}_${tract}_fdt_normalisedWT -odt float
+					
+				echo "........Normalise datasets by Max Value in FDT and threshold"
+				set temp = `fslstats ./${subject}_${hemi}_${tract}/fdt_paths.nii.gz -R`
+				set normaliser = `echo $temp[2]`
+				fslmaths ./${subject}_${hemi}_${tract}/fdt_paths.nii.gz -div $normaliser ./temp/${subject}_temp1 -odt float
+				fslmaths ./temp/${subject}_temp1.nii.gz -mul 100 ${subject}_${hemi}_${tract}_fdtNormMAX -odt float
+				
+				echo "........Smooth unthresholded and unbinarised Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"	
+				fslmaths ${subject}_${hemi}_${tract}_fdtNormMAX.nii.gz -kernel sphere $kernel -dilM ${subject}_${hemi}_${tract}_fdtNormMAX_${kernel}mmSphere -odt int
+				
+				echo "........Threshold by "$threshold
+				fslmaths ${subject}_${hemi}_${tract}_fdtNormMAX -thr $threshold ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold} -odt float
+					
+				echo "........Binarise MAX volumes"
+				fslmaths ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold} -div ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold} ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold}Bin -odt int
+			
+				echo "........Smooth Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"	
+				fslmaths ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold}Bin.nii.gz -kernel sphere $kernel -dilM ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold}_${kernel}mmSphere -odt int
+				
+				echo "........Compile data for FDT percentages (normalised to waytotals)"
+				fslstats ${subject}_${hemi}_${tract}_fdtNormMAXThres${threshold}.nii.gz -M > ${subject}_${hemi}_${tract}_fdt_percentWT		
+			end
+			
+			fslmaths ${subject}_L_${tract}_fdtNormMAX_${kernel}mmSphere.nii.gz -add ${subject}_R_${tract}_fdtNormMAX_${kernel}mmSphere.nii.gz ${subject}_Both_${tract}_fdtNormMAX_${kernel}mmSphere
+			fslmaths ${subject}_L_${tract}_fdtNormMAXThres${threshold}_${kernel}mmSphere.nii.gz -add ${subject}_R_${tract}_fdtNormMAXThres${threshold}_${kernel}mmSphere.nii.gz ${subject}_Both_${tract}_fdtNormMAXThres${threshold}_${kernel}mmSphere
+		end
+
+	else
+
+		fslview ${subject}_T1.nii.gz ${subject}_SC*Sphere.nii.gz -t 0.5 -l "Yellow" ${subject}_Amygdala*Sphere.nii.gz -t 0.5 -l "Green" ${subject}_Pulvinar*Sphere.nii.gz -t 0.5 -l "Blue" \
+		${subject}_Both_SC_Pulv_Amyg_Tract_noStria_fdtNormMAX_*Sphere.nii.gz -t 0.2 -l "Red-Yellow" ${subject}_Both_SC_Pulv_Amyg_Tract_noStria_fdtNormMAXThres*Sphere.nii.gz -l "Red-Yellow" \
+		${subject}_Both_StriaTerm_fdtNormMAX_*Sphere.nii.gz -t 0.2 -l "Blue-Lightblue" ${subject}_Both_StriaTerm_fdtNormMAXThres*Sphere.nii.gz -l "Blue-Lightblue"  \
+		${subject}_Both_SC_Pulv_Amyg_Tract_fdtNormMAX_*Sphere.nii.gz -t 0.2 -l "Red" ${subject}_Both_SC_Pulv_Amyg_Tract_fdtNormMAXThres*Sphere.nii.gz -l "Red" \
+		${subject}_Both_Amyg_Pulv_SC_Tract_fdtNormMAX_*Sphere.nii.gz -t 0.2 -l "Red" ${subject}_Both_Amyg_Pulv_SC_Tract_fdtNormMAXThres*Sphere.nii.gz -l "Red" &
+	endif
+	cd ..
+end
+
+
+exit:

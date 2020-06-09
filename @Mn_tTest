@@ -1,0 +1,10 @@
+#!/bin/tcsh
+# @Mn_tTest
+# by AHB, started March 2013
+set version = 1.25-03-2013
+
+set base
+set day1
+set day2
+
+

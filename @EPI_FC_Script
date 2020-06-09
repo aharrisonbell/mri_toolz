@@ -1,0 +1,244 @@
+#!/bin/tcsh
+# @EPI_FC_Script
+# by AHB, started December 2011
+# Version 1.0 (Dec.09.2011)
+# Oxford Script
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set nii_dir = $PWD/nii_files
+set out_dir = $PWD/DTI_data
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set DTI_label = DTImosaicb100010mm
+set PE_axis = 2 # (x,y,z) = (LR/parallel to B0/up-down) therefore in monkey space = (LR/IS/PA)
+#
+# Program Options
+set REV_OPTION = "y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv < 2) then
+	echo " "
+	echo "***********************************"
+	echo "@EPI_FC_Script by AHB, V.12.09.2011"
+	echo "***********************************"
+	echo " "
+	echo "Script to analyse EPI data collected at the BSB (currently only for resting state data)"
+	echo " "
+	echo "INPUT: @EPI_FC_Script <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data (e.g., MonkeyDate).  This has no impact on the program,"
+	echo "                it simply labels the data in the directory."
+	echo " step (optional): perform step X where..."
+	echo "   1) Preprocess Data:"
+	echo "       a. smoothing"
+	echo "       b. motion correction"
+	echo "       c. registration to atlas/HI-RES"
+	echo "       d. temporal filtering"
+	echo "   2) FEAT"
+	echo "   3) Apply TOPUP to data and B0s, and force radiological view"
+	echo "   4) Create Brain Mask using BET (need to correct manually)"
+	echo "   5) Generate skull-stripped volumes (fslmaths)"
+	echo "   6) Run DTIFIT"
+	echo "   7) Run Bedpostx"
+	echo "   *) Run PROBTRACKX (Using GUI)
+	echo " "
+	echo "Note: Default is to perform all steps."
+	echo " "
+	echo "Note: for Step1 to work, the DICOM directories must be in INPUT_DIR"
+	echo "Credits: load_dicom, dcm2nii, relabelvolume = FSL Group/FMRIB/KM/Oxford (i.e., not me)"
+	echo " "
+	goto exit
+endif
+
+
+
+
+B. FUNCTIONAL data
+- go into directory 'resting state'
+- identify correct functional image by doing fslinfo on all images in folder and picking the one with 1600 vols
+- delete any other images with <1600 vols
+- open correct functional image in fslview and watch through entire data set in movie mode to check for major artefacts like part of the image suddenly going black or turning into stripey flashing lines
+- trim functional image to get rid of black space - but leave 1-2 cm around the brain
+  fslroi images_0014_epiblahblah.nii.gz raw.nii.gz 20 80 40 80 0 70
+- check raw.nii.gz to make sure you have not accidentally chopped off half the brain
+If data from the same animal have already been preprocessed, do not bet and manually skull strip the data. A solution could be to adapt the mask created for the analysis of the 1st set of data.
+flirt -in <path2dataset1>/structural.nii.gz -ref <path2datasetn>/structural/chopped.nii.gz  \
+-omat <path2datasetn>/ref2data.mat
+flirt -in <path2dataset1>/brain_mask -ref <path2datasetn>/chopped.nii.gz \ 
+-out <path2datasetn>/structural/brain_mask -init <path2datasetn>/ref2data.mat -applyxfm
+
+- skull strip raw.nii.gz
+  bet raw temp -f 0.1 (find best parameters by trial and error)
+- manually correct skull stripped image
+- turn corrected image into a nice brain mask
+  fslmaths temp -bin -s 2 -thr 0.5 -bin brain_mask
+- check brain mask against un-skull-stripped brain
+- make a skull stripped functional image
+  fslmaths raw.nii.gz -mas brain_mask.nii.gz raw_brain.nii.gz
+- high pass filter data
+  fslmaths raw_brain -bptf -1 5 filtered_brain.nii.gz
+
+outputs in resting_state folder should be
+raw.nii.gz (skull on, unfiltered, but after trimming)
+raw_brain.nii.gz (skull OFF, unfiltered, after trimming)
+brain_mask.nii.gz 
+filtered_brain.nii.gz (skull OFF, filtered, after trimming)
+
+
+
+
+#STEPS:
+# Convert to float
+fslmaths C_images_014_ep2dfmri prefiltered_func_data -odt float  # convert to floats?
+
+# Prep and conduct motion correction
+fslroi prefiltered_func_data example_func 800 1 # extract single volume halfway through time (not sure why...)
+mcflirt -in prefiltered_func_data -out prefiltered_func_data_mcf -mats -plots -refvol 800 -rmsrel -rmsabs
+
+# dump all motion correction into folder
+mkdir -p mc
+mv -f prefiltered_func_data_mcf.mat prefiltered_func_data_mcf.par prefiltered_func_data_mcf_abs.rms prefiltered_func_data_mcf_abs_mean.rms \
+prefiltered_func_data_mcf_rel.rms prefiltered_func_data_mcf_rel_mean.rms mc
+
+# generate summary charts for motion correction
+fsl_tsplot -i prefiltered_func_data_mcf.par -t 'MCFLIRT estimated rotations (radians)' -u 1 --start=1 --finish=3 -a x,y,z -w 640 -h 144 -o rot.png 
+fsl_tsplot -i prefiltered_func_data_mcf.par -t 'MCFLIRT estimated translations (mm)' -u 1 --start=4 --finish=6 -a x,y,z -w 640 -h 144 -o trans.png 
+fsl_tsplot -i prefiltered_func_data_mcf_abs.rms,prefiltered_func_data_mcf_rel.rms -t 'MCFLIRT estimated mean displacement (mm)' -u 1 -w 640 -h 144 -a absolute,relative -o disp.png 
+
+# Brain Extraction / Skull-Strip
+fslmaths prefiltered_func_data_mcf -Tmean mean_func # create average brain (1 TR)
+bet2 mean_func mask -f 0.3 -n -m # create mask
+immv mask_mask mask # rename output to "mask"
+fslmaths prefiltered_func_data_mcf -mas mask prefiltered_func_data_bet # create skull-stripped epi
+ 
+# Create new mask that eliminates ???
+fslstats prefiltered_func_data_bet -p 2 -p 98 
+fslmaths prefiltered_func_data_bet -thr <OUTPUT FROM PREVIOUS/10> -Tmin -bin mask -odt char
+fslstats prefiltered_func_data_mcf -k mask -p 50
+fslmaths mask -dilF mask
+
+# Apply new mask and average across time
+fslmaths prefiltered_func_data_mcf -mas mask prefiltered_func_data_thresh
+fslmaths prefiltered_func_data_thresh -Tmean mean_func
+
+# Average new masked data
+susan prefiltered_func_data_thresh 1097.84555025 0.849256900212 3 1 1 mean_func 1097.84555025 prefiltered_func_data_smooth
+
+fslmaths prefiltered_func_data_smooth -mas mask prefiltered_func_data_smooth
+fslmaths prefiltered_func_data_smooth -inm 10000 prefiltered_func_data_intnorm
+fslmaths prefiltered_func_data_intnorm -bptf 25.0 -1 prefiltered_func_data_tempfilt
+fslmaths prefiltered_func_data_tempfilt filtered_func_data
+fslmaths filtered_func_data -Tmean mean_func
+
+rm -rf prefiltered_func_data*
+
+
+
+
+#OUTPUT FROM PRE_STATS
+
+cp /tmp/feat_VyYAR8.fsf design.fsf
+
+feat_model design 
+
+mkdir .files
+cp /usr/local/fsl/doc/fsl.css .files;
+ln -s /usr/local/fsl/doc/images .files/images
+
+feat SCOTTIE_MI00121+.feat/design.fsf -D /Users/ab03/Documents/fMRI_Data/Oxford_Data/DicomProcessed/SCOTTIE_MI00121+.feat -I 1 -prestats
+
+feat SCOTTIE_MI00121+.feat/design.fsf -D /Users/ab03/Documents/fMRI_Data/Oxford_Data/DicomProcessed/SCOTTIE_MI00121+.feat -stop
+
+
+fslmaths C_images_014_ep2dfmri prefiltered_func_data -odt float  # convert to floats?
+
+fslroi prefiltered_func_data example_func 800 1
+
+mcflirt -in prefiltered_func_data -out prefiltered_func_data_mcf -mats -plots -refvol 800 -rmsrel -rmsabs
+
+mkdir -p mc
+mv -f prefiltered_func_data_mcf.mat prefiltered_func_data_mcf.par prefiltered_func_data_mcf_abs.rms prefiltered_func_data_mcf_abs_mean.rms \
+prefiltered_func_data_mcf_rel.rms prefiltered_func_data_mcf_rel_mean.rms mc
+
+fsl_tsplot -i prefiltered_func_data_mcf.par -t 'MCFLIRT estimated rotations (radians)' -u 1 --start=1 --finish=3 -a x,y,z -w 640 -h 144 -o rot.png 
+fsl_tsplot -i prefiltered_func_data_mcf.par -t 'MCFLIRT estimated translations (mm)' -u 1 --start=4 --finish=6 -a x,y,z -w 640 -h 144 -o trans.png 
+fsl_tsplot -i prefiltered_func_data_mcf_abs.rms,prefiltered_func_data_mcf_rel.rms -t 'MCFLIRT estimated mean displacement (mm)' -u 1 -w 640 -h 144 -a absolute,relative -o disp.png 
+
+fslmaths prefiltered_func_data_mcf -Tmean mean_func
+
+bet2 mean_func mask -f 0.3 -n -m; /usr/local/fsl/bin/immv mask_mask mask
+
+fslmaths prefiltered_func_data_mcf -mas mask prefiltered_func_data_bet
+
+fslstats prefiltered_func_data_bet -p 2 -p 98
+0.000000 2312.024658 
+
+fslmaths prefiltered_func_data_bet -thr 231.2024658 -Tmin -bin mask -odt char
+
+fslstats prefiltered_func_data_mcf -k mask -p 50
+1463.794067 
+
+fslmaths mask -dilF mask
+
+fslmaths prefiltered_func_data_mcf -mas mask prefiltered_func_data_thresh
+
+fslmaths prefiltered_func_data_thresh -Tmean mean_func
+
+susan prefiltered_func_data_thresh 1097.84555025 0.849256900212 3 1 1 mean_func 1097.84555025 prefiltered_func_data_smooth
+
+fslmaths prefiltered_func_data_smooth -mas mask prefiltered_func_data_smooth
+
+fslmaths prefiltered_func_data_smooth -inm 10000 prefiltered_func_data_intnorm
+
+fslmaths prefiltered_func_data_intnorm -bptf 25.0 -1 prefiltered_func_data_tempfilt
+
+fslmaths prefiltered_func_data_tempfilt filtered_func_data
+
+fslmaths filtered_func_data -Tmean mean_func
+
+rm -rf prefiltered_func_data*
+
+
+
+#OUTPUT FROM STATS
+
+
+fslmaths /Users/ab03/Documents/fMRI_Data/Oxford_Data/DicomProcessed/SCOTTIE_MI00121/nii_files/C_images_014_ep2dfmri prefiltered_func_data -odt float
+Total original volumes = 1600
+
+ffslroi prefiltered_func_data example_func 800 1
+
+fslmaths prefiltered_func_data filtered_func_data
+
+fslmaths filtered_func_data -Tmin -bin mask -odt char
+
+fslstats filtered_func_data -k mask -R | awk '{ print  }' -
+1.000000
+
+fslmaths filtered_func_data -Tmean mean_func
+
+rm -rf prefiltered_func_data*
+
+Stats
+
+film_gls -rn stats -noest filtered_func_data design.mat 1.000000
+
+
+
+
+
+
+
+
+
+exit:

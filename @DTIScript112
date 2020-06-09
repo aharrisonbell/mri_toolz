@@ -1,0 +1,502 @@
+#!/bin/tcsh
+# @DTIScript (aka @HopeBrainHasWhiteMatter)
+# by AHB, started August 2011
+# v.1.2012.4.22
+# Script to process and segment DTI data collected at BSB
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+# This script also assumes the data have been collected in a certain way (e.g., B0 fields at beginning
+# of each run, 60 dirs split into 3 files + 8 dir, alternating phase-encoding dirs, etc.).  If your
+# data have been collected in a different way, you may have to change the script.
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set home_dir = $PWD
+set nii_dir = $PWD/nii_files
+set out_dir = $PWD/DTI_data
+set anat_dir = $PWD/structurals
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+#
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain.nii
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set DTI_label = DTImosaicb100010mm
+set PE_axis = 2 # (x,y,z) = (LR/parallel to B0/up-down) therefore in monkey space = (LR/IS/PA)
+#
+# Program Options
+set REV_OPTION = "y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "y" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*******************************"
+	echo "@DTIScript by AHB, V.12.09.2011"
+	echo "*******************************"
+	echo " "
+	echo "Script for processing DTI data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, etc.  If the script doesn't work,"
+	echo "try altering the default values (edit this script)."
+	echo " "
+	echo "INPUT: @DTI_Script <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data (e.g., MonkeyDate).  This has no impact on the program,"
+	echo "                it simply labels the data in the directory."
+	echo " step (optional): perform step X where..."
+	echo "   1) Extract and merge B0 images"
+	echo "   2) Run TOPUP to generate correction"
+	echo "   3) Apply TOPUP to data and B0s"
+	echo "   4) Correct Alignment and force radiological view"
+	echo "   5) Create Brain Mask using BET (need to correct manually)"
+	echo "   6) Generate skull-stripped volumes (fslmaths)"
+	echo "   7) Align to Structurals and Standard Atlas"
+	echo "   8) Run DTIFIT"
+	echo "   9) Run Bedpostx"
+	echo "   *) Run PROBTRACKX (Using GUI)"
+	echo " "
+	echo "Note: Default is to perform all steps."
+	echo " "
+	echo "Further Note:  If you would like to run all steps without stopping (i.e., if you"
+	echo "   have a corrected mask already generated, name the file <SESSION>_mask_fix.nii.gz"
+	echo "   and place in the DTI_Directory.  New masks will be created but this mask will "
+	echo "   not be overwritten, and will be used to do the DTI analysis."
+	echo " "
+	echo "Credits: props to FSL Group/FMRIB/KM/SJ for recipe, etc."
+	echo "         TOPUP - JA (FMRIB)"
+	goto exit
+endif
+
+set session_name = $1
+if ($#argv == 1) then
+	set step = 0
+else
+	set step = $2
+endif
+mkdir $out_dir $temp_dir
+mkdir $nii_dir/temp
+
+###################################################################################################
+# Step 1: Extract B0 images from individual DTI volumes
+# Explanation: Each of the (4) DTI volumes (in both PE directions) contain B0 directions, which 
+# must be extracted and merged.  For some reason, the B0 from '8dirs' files are not included.  
+if ($step == 1 || $step == 0 || $step == 123456) then
+echo "Step 1: Extract B0 images from individual DTI volumes"
+	cd $nii_dir
+	rm -f $out_dir/acquisition_parameters.txt
+	set merge_com = "fslmerge -t $out_dir/${session_name}_mergedB0s "
+	foreach fn (`ls C*${DTI_label}*.nii*`) 
+	
+		# Correct Orientation
+		#cp $fn ./temp/temp.nii.gz
+		#fslorient -deleteorient ./temp/temp.nii.gz
+		#fslswapdim ./temp/temp.nii.gz x y z ./temp/temp2.nii.gz
+		#fslorient -setqformcode 1 ./temp/temp2.nii.gz
+		#cp ./temp/temp2.nii.gz C_$fn
+	
+		# Determine number of directions (so not to include B0 only - 8dirs)
+		set dim4=`fslval $fn dim4` # Identifies number of directions (dim4-1)
+		if ($dim4 > 9) then
+			echo "...Extract B0 volume from "$fn
+			fslroi $fn $temp_dir/b0_${fn} 0 1 # remove B-fieldsim1
+			
+			# Add file to list of volumes to merge
+			set merge_com = "$merge_com $temp_dir/b0_${fn}" # compiles list of B0 files to merge
+
+			#echo $PE_axis
+			# Add PEdata to topup --datain textfile
+			if ($PE_axis == 1) then
+ 				set pe_dir = `echo $fn | sed 's/.*LR.*/1/g' | sed 's/.*RL.*/-1/g'`
+ 				echo "$pe_dir 0 0 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+ 			if ($PE_axis == 2) then
+ 				set pe_dir = `echo $fn | sed 's/.*HF.*/1/g' | sed 's/.*FH.*/-1/g'`
+ 				echo "0 $pe_dir 0 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+ 			if ($PE_axis == 3) then
+ 				set pe_dir = `echo $fn | sed 's/.*HF.*/1/g' | sed 's/.*FH.*/-1/g'`
+ 				echo "0 0 $pe_dir 1" >> $out_dir/acquisition_parameters.txt
+ 			endif
+		endif
+	end
+	$merge_com # Execute merge command
+	echo "...Merged file created in "$out_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_mergedB0s.nii.gz &
+	endif
+	echo "Step 1 - Done."
+endif
+
+###################################################################################################
+# Step 2: Run TOPUP to generate correction
+if ($step == 2 || $step == 0 || $step == 123456) then
+	echo "Step 2: Run TOPUP to generate correction"
+	topup --imain=$out_dir/${session_name}_mergedB0s \
+		--datain=$out_dir/acquisition_parameters.txt \
+		--config=$scriptdir/b02b0.cnf \
+		--out=$out_dir/${session_name}_TopUp_out --verbose
+	echo "Step 2 - Done."
+endif
+
+###################################################################################################
+# Step 3: Apply Topup to DTI data
+if ($step == 3 || $step == 0 || $step == 123456) then
+	cp $out_dir/${session_name}_TopUp_out_
+	echo "Step 3: Applying topup to DTI data..."
+	cd $nii_dir
+	set imlist15 = ""
+	set ilist15 = ""
+	set imlist14 = ""
+	set ilist14 = ""
+	set imlist13 = ""
+	set ilist13 = ""
+	set imlist12 = ""
+	set ilist12 = ""
+	set imlist6 = ""
+	set ilist6 = ""
+	set imlistb0 = ""
+	set ilistb0 = ""
+	set cnt = 1
+	echo "...Creating lists..."
+	foreach fn (`ls C*${DTI_label}*.nii*`) 
+	    if (`echo $fn | grep 15dirs` == "" ) then
+			if (`echo $fn | grep 14dirs` == "" ) then
+				if (`echo $fn | grep 13dirs` == "" ) then
+		    		if (`echo $fn | grep 12dirs` == "" ) then
+		    			if (`echo $fn | grep 6dirs` == "" ) then
+		    				if (`echo $fn | grep 8dirs` == "" ) then
+								echo "Warning: unrecognised filetype "$fn
+		    				else
+								set imlistb0 = "$imlistb0, $fn"
+								set ilistb0 = "$ilistb0, $cnt"
+		    				endif
+						else
+		    				set imlist6 = "$imlist6, $fn"
+		    				set ilist6 = "$ilist6, $cnt"
+		    				@ cnt++
+						endif
+		    		else
+						set imlist12="$imlist12,$fn"
+						set ilist12="$ilist12,$cnt"
+						@ cnt++
+	    			endif
+	  			else
+					set imlist13="$imlist13,$fn"
+					set ilist13="$ilist13,$cnt"
+					@ cnt++
+			  	endif
+			else
+	  			set imlist14="$imlist14,$fn"
+				set ilist14="$ilist14,$cnt"
+				@ cnt++
+	  		endif
+	  	else
+	  		set imlist15="$imlist15,$fn"
+			set ilist15="$ilist15,$cnt"
+			@ cnt++
+	  	endif
+	end
+	set imlist15 = `echo $imlist15 | cut -b 2-`
+	set ilist15 = `echo $ilist15 | cut -b 2-`
+	set imlist14 = `echo $imlist14 | cut -b 2-`
+	set ilist14 = `echo $ilist14 | cut -b 2-`
+	set imlist13 = `echo $imlist13 | cut -b 2-`
+	set ilist13 = `echo $ilist13 | cut -b 2-`
+	set imlist12 = `echo $imlist12 | cut -b 2-`
+	set ilist12 = `echo $ilist12 | cut -b 2-`
+	set imlist6 = `echo $imlist6 | cut -b 2-`
+	set ilist6 = `echo $ilist6 | cut -b 2-`
+	set imlistb0 = `echo $imlistb0 | cut -b 2-`
+	set ilistb0 = `echo $ilistb0 | cut -b 2-`
+
+	# Apply topup
+	echo "...Applying topup to 15 dirs data..."
+	applytopup --imain=$imlist15 \
+    	--datain=$out_dir/acquisition_parameters.txt \
+       	--inindex=$ilist15 \
+       	--topup=$out_dir/${session_name}_TopUp_out \
+       	--out=$temp_dir/temp_data15 --verbose --method=jac
+
+	echo "...Applying topup to 14 dirs data..."
+	applytopup --imain=$imlist14 \
+    	--datain=$out_dir/acquisition_parameters.txt \
+       	--inindex=$ilist14 \
+       	--topup=$out_dir/${session_name}_TopUp_out \
+       	--out=$temp_dir/temp_data14 --verbose --method=jac
+
+	echo "...Applying topup to 13 dirs data..."
+	applytopup --imain=$imlist13 \
+    	--datain=$out_dir/acquisition_parameters.txt \
+       	--inindex=$ilist13 \
+       	--topup=$out_dir/${session_name}_TopUp_out \
+       	--out=$temp_dir/temp_data13 --verbose --method=jac
+
+	echo "...Applying topup to 12 dirs data..."
+	applytopup --imain=$imlist12 \
+    	--datain=$out_dir/acquisition_parameters.txt \
+       	--inindex=$ilist12 \
+       	--topup=$out_dir/${session_name}_TopUp_out \
+      	--out=$temp_dir/temp_data12 --verbose --method=jac
+
+	echo "...Applying topup to 6 dirs data..."
+	applytopup --imain=$imlist6 \
+    	--datain=$out_dir/acquisition_parameters.txt \
+     	--inindex=$ilist6 \
+     	--topup=${out_dir}/${session_name}_TopUp_out \
+     	--out=$temp_dir/temp_data6 --verbose --method=jac
+
+	echo "...Merging results..."
+	fslmerge -t $out_dir/${session_name}_TopUpData_60dirs $temp_dir/temp_data15 $temp_dir/temp_data14 $temp_dir/temp_data13 $temp_dir/temp_data12 $temp_dir/temp_data6
+endif
+
+###################################################################################################
+# Step 4: Correct orientation of all files
+if ($step == 4 || $step == 0 || $step == 123456 || $step == 1345) then
+	date
+	echo "Step 4: Correcting orientation..." 
+		
+	fslswapdim $out_dir/${session_name}_mergedB0s.nii.gz x z y $out_dir/${session_name}_mergedB0s_fix.nii.gz
+	fslorient -deleteorient $out_dir/${session_name}_mergedB0s_fix.nii.gz 
+	fslorient -setqformcode 1 $out_dir/${session_name}_mergedB0s_fix.nii.gz 
+
+	fslswapdim $out_dir/${session_name}_TopUpData_60dirs.nii.gz x z y $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz
+	fslorient -deleteorient $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz 
+	fslorient -setqformcode 1 $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz 
+	
+	echo "...Force radiological view..."
+	fslorient -forceradiological $out_dir/${session_name}_mergedB0s_fix.nii.gz
+	fslorient -forceradiological $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz
+
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_mergedB0s_fix.nii.gz $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz &
+	endif
+
+	echo "Step 4: Done.  Be sure to confirm the labels are correct and the capsule appears on the LEFT side"
+endif 
+
+###################################################################################################
+# Step 5: Create Brain Mask using BET (and AFNI) (need to correct manually)
+if ($step == 5 || $step == 0 || $step == 123456 || $step == 1345) then
+	date
+	echo "Step 5: Create Brain Mask using BET (and AFNI) (need to correct manually)"
+
+	# Use BET to create mask
+	echo "...Using BET (FSL) to create automask..."
+	bet $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz $out_dir/${session_name}_betmask_raw -f 0.7 
+	bet $out_dir/${session_name}_mergedB0s_fix.nii.gz $out_dir/${session_name}_betmaskB0s_raw -f 0.7 
+				
+	if ($AFNI_OPTION == "y"||$AFNI_OPTION == "Y") then
+		# Use AFNI to create automask (requires AFNI be installed and in path)
+		echo "...Using AFNI to create automask..."
+		rm -f $out_dir/${session_name}_automask_raw+* $temp_dir/tempmask+*
+		3dAutomask -q -dilate 2 -clfrac 0.6 -prefix $temp_dir/tempmask $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz
+		3dAFNItoNIFTI -prefix $out_dir/${session_name}_automask_raw $temp_dir/tempmask+orig
+		rm -f $out_dir/${session_name}_automaskB0s_raw+* $temp_dir/tempmask+*
+		3dAutomask -q -dilate 2 -clfrac 0.6 -prefix $temp_dir/tempmask $out_dir/${session_name}_mergedB0s_fix.nii.gz
+		3dAFNItoNIFTI -prefix $out_dir/${session_name}_automaskB0s_raw $temp_dir/tempmask+orig
+		
+		# Split the difference!! (Add both masks together)
+		fslmaths $out_dir/${session_name}_automask_raw.nii -add $out_dir/${session_name}_betmask_raw.nii.gz -bin $out_dir/${session_name}_AFNIbetmask_raw
+	endif
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz \
+		$out_dir/${session_name}_betmaskB0s_fix.nii.gz \
+		$out_dir/${session_name}_automask_raw.nii $out_dir/${session_name}_betmask_raw.nii.gz \
+		$out_dir/${session_name}_AFNIbetmask_raw \
+		$out_dir/${session_name}_betmaskB0s_raw \
+		$out_dir/${session_name}_automaskB0s_raw &
+	endif
+	
+	echo "Step 5 - Done."
+	echo "You must now fix the mask and save it with the following name: "
+	echo "'<session_name>_dtimask_fix.nii.gz'"
+endif
+
+###################################################################################################
+# Step 6: Generate skull-stripped volumes (fslmaths)
+if ($step == 6 || $step == 0 || $step == 123456) then
+	date
+	echo "Step 6: Generate skull-stripped volumes..."
+	# Create NODIF_BRAIN_MASK with 2mm smoothing and clip threshold of 0.5
+	fslmaths $out_dir/${session_name}_dtimask_fix -bin -s 2 -thr 0.5 -bin $out_dir/${session_name}_dtimask_fix_2mm
+
+	# Create STRIPPED BRAIN using mask
+	fslmaths $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz -mas $out_dir/${session_name}_dtimask_fix_2mm $out_dir/nodif_brain.nii.gz
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz \
+		$out_dir/${session_name}_dtimask_fix_2mm.nii.gz \
+		$out_dir/nodif_brain.nii.gz & 
+	endif
+	echo "Step 6 - Done."
+endif
+
+###################################################################################################
+# Step 7: Alignment between DTI and HIGHRES, etc.
+if ($step == 7 || $step == 0) then
+	echo "Step 7: Align DTI data to HR structural and HR atlas..."
+	# Step 9.1 - align DTI to Structural (be sure to have run @AnatScript)
+	# (This step assumes the brains are in proper alignment)
+	echo "...Aligning DTI to Structural..."
+	flirt -in $out_dir/${session_name}_mergedB0s_fix.nii.gz -ref $anat_dir/${session_name}_HRstrip_AFNI.nii.gz \
+	-dof 9 -omat $out_dir/${session_name}_B0toHR.mat -out $out_dir/${session_name}_B0alignHR
+	flirt -in $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz -ref $anat_dir/${session_name}_HRstrip_AFNI.nii.gz \
+	-dof 9 -omat $out_dir/${session_name}_TUtoHR.mat -out $out_dir/${session_name}_TUalignHR
+
+	# Step 9.2 - align Structural to Atlas
+	# (This step assumes the brains are in proper alignment)
+	echo "...Aligning Structural to Atlas..."
+	flirt -in $anat_dir/${session_name}_HRmerge_fix.nii.gz -ref $mni_atlas -dof 9 \
+	-omat $out_dir/${session_name}_HRtoAtlas.mat -out $out_dir/${session_name}_HRalignAtlas
+
+	# Step 9.3 - align DTI to Atlas
+	# (This step assumes the brains are in proper alignment)
+	echo "...Aligning DTI to Atlas..."	
+	flirt -in $out_dir/${session_name}_mergedB0s_fix.nii.gz -ref $mni_atlas -dof 9 \
+	-omat $out_dir/${session_name}_HRtoAtlas.mat -out $out_dir/${session_name}_B0alignAtlas
+	
+	flirt -in $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz -ref $mni_atlas -dof 9 \
+	-omat $out_dir/${session_name}_HRtoAtlas.mat -out $out_dir/${session_name}_TUalignAtlas
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $anat_dir/${session_name}_HRmerge_fix.nii.gz \
+		$out_dir/${session_name}_B0alignHR*.nii.gz \
+		$out_dir/${session_name}_TUalignHR*.nii.gz &
+		
+		fslview $mni_atlas \
+		$out_dir/${session_name}_HRalignAtlas*.nii.gz &
+		
+		fslview $mni_atlas \
+		$out_dir/${session_name}_B0alignAtlas*.nii.gz \
+		$out_dir/${session_name}_TUalignAtlas*.nii.gz &
+	endif
+	
+	if ($AFNI_OPTION == "y"||$AFNI_OPTION == "Y") then
+		echo "Step 9: Align DTI data to HR structural and HR atlas..."
+		# Step 9.1 - align DTI to Structural (be sure to have run @AnatScript)
+		# (This step assumes the brains are in proper alignment)
+		echo "...Aligning DTI to Structural..."
+		3dAllineate -input $out_dir/${session_name}_mergedB0s_fix.nii.gz -base $anat_dir/${session_name}_HRstrip_AFNI.nii \
+		-1Dparam_save $out_dir/${session_name}_B0toHR.mat -prefix $out_dir/${session_name}_B0alignHR
+		3dAllineate -input $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz -base $anat_dir/${session_name}_HRstrip_AFNI.nii \
+		-1Dparam_save $out_dir/${session_name}_TUtoHR.mat -prefix $out_dir/${session_name}_TUalignHR
+	
+		# Step 9.2 - align Structural to Atlas
+		# (This step assumes the brains are in proper alignment)
+		echo "...Aligning Structural to Atlas..."
+		3dAllineate -input $anat_dir/${session_name}_HRstrip_AFNI.nii -base $mni_atlas \
+		-1Dparam_save $out_dir/${session_name}_HRtoAtlas.mat -prefix $out_dir/${session_name}_HRalignAtlas
+	
+		# Step 9.3 - align DTI to Atlas
+		# (This step assumes the brains are in proper alignment)
+		echo "...Aligning DTI to Atlas..."	
+		3dAllineate -input $out_dir/${session_name}_mergedB0s_fix.nii.gz -base $mni_atlas \
+		-1Dparam_save $out_dir/${session_name}_HRtoAtlas.mat -prefix $out_dir/${session_name}_B0alignAtlas
+		3dAllineate -input $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz -base $mni_atlas \
+		-1Dparam_save $out_dir/${session_name}_HRtoAtlas.mat -prefix $out_dir/${session_name}_TUalignAtlas
+		
+		if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+			fslview $anat_dir/${session_name}_HRstrip_AFNI.nii* \
+			$out_dir/${session_name}_B0alignHR*.nii.gz \
+			$out_dir/${session_name}_TUalignHR*.nii.gz &
+			
+			fslview $mni_atlas \
+			$out_dir/${session_name}_HRalignAtlas*.nii.gz &
+			
+			fslview $mni_atlas \
+			$out_dir/${session_name}_B0alignAtlas*.nii.gz \
+			$out_dir/${session_name}_TUalignAtlas*.nii.gz &
+		endif
+	endif	
+	echo "Step 7 - Done."
+endif  
+  
+###################################################################################################
+# Step 8: Run DTIFIT
+if ($step == 7 || $step == 0) then
+	echo "Step 8: Run DTIFIT..."
+	dtifit -V -k $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz \
+		-o $out_dir/${session_name}_DTIfit \
+		-m $out_dir/nodif_brain_mask.nii.gz \
+		-r $scriptdir/bvecs_212019.bvecs \
+		-b $scriptdir/bvals_212019.bvals
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz \
+		$out_dir/${session_name}_DTIfit_*.nii.gz &
+	endif
+	echo "Step 8 - Done."
+endif
+
+###################################################################################################
+# Step 9: Run Bedpostx (Using GUI)
+if ($step == 9 || $step == 0) then
+	echo "Step 9: Run Bedpostx..."
+	mkdir $out_dir/bedpostx
+	cp $scriptdir/bvecs_212019.bvecs $out_dir/bedpostx/bvecs
+	cp $scriptdir/bvals_212019.bvals $out_dir/bedpostX/bvals
+	cp $out_dir/${session_name}_TopUpData_60dirs_fix.nii.gz $out_dir/bedpostx/data.nii.gz
+	cp $out_dir/nodif_brain_mask.nii.gz $out_dir/bedpostX/nodif_brain_mask.nii.gz
+	
+	bedpostx $out_dir/bedpostx
+#		-n 2 \
+#		-w 1 \
+# 		-b 1000 \
+# 		-j 1250 \
+# 		-s 25
+
+	echo "Step 9 - Done."
+endif
+
+###################################################################################################
+# Step 10: Run PROBTRACKX (Using GUI)
+if ($step == 10 || $step == 0) then
+	echo "Step 10: Run PROBTRACKX..."
+
+# probtrackx -s <basename> -m <maskname> -x <seedfile> -o <output> --targetmasks=<textfile>
+#  probtrackx --help
+# 
+	echo "Step 10 - Done."
+
+
+endif
+
+goto exit
+
+
+
+
+
+
+
+# Step 10 - Generate masks from MNI Atlas
+if ($step == 10) then
+# Create individual mask for each area listed in MNI atlas
+
+foreach t (`count 0 255 -digits 1`)
+3dmerge
+end
+
+
+endif
+
+
+
+
+
+
+exit:
+
+
+
+
+

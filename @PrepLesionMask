@@ -1,0 +1,59 @@
+#!/bin/tcsh
+# @PrepLesionMask
+# by AHB, started July 2014
+# Version 1.0
+# Prepare Lesion Mask for Resting State
+
+if ($#argv < 3) then
+	echo " "
+	echo "*******************************"
+	echo "@PrepLesionMask by AHB, V.25.07.2014"
+	echo "*******************************"
+	echo " "
+	echo "Script to prepare several EPIs for resting state analysis"
+	echo " "
+	echo "INPUT: @PrepEPI <SESSION> <INPUT_PREFIX> <OUTPUT_FILE>"
+	echo "This program merges, skull strips, and corrects orientation of all"
+	echo "EPI volumes that contain INPUT_PREFIX in their name"
+	goto exit
+endif
+
+set session_name = $1
+set inprefix = $2
+set outname = $3
+mkdir -p temp
+set temp_dir=$PWD/temp
+
+# Merge
+echo "Step 1: Merge EPIs that have INPREFIX in their FNs into one volume"
+set template = "" 
+set counter = 1 # this counter ensures the proper command line is generated
+foreach fn (`ls *${inprefix}*nii*`) 
+	if ($counter == 1) then
+		set template = "$fn"
+		set basevolume = "$fn"
+	else
+		echo "...aligning "$fn
+		flirt -in $fn -ref $basevolume -dof 6 -out $temp_dir/temp_epi${counter}
+		set template = "$template -add ${temp_dir}/temp_epi${counter}"
+		endif
+	@ counter ++
+end
+set com_line = "fslmaths $template $temp_dir/${session_name}epi_1Mg"
+$com_line
+echo "...Merged file created in "$temp_dir
+
+# Skull Strip
+echo "Step 2: Skullstrip merged volume"
+bet $temp_dir/${session_name}epi_1Mg $temp_dir/temp1 -m
+fslmaths $temp_dir/${session_name}epi_1Mg -mas $temp_dir/temp1_mask $temp_dir/temp2
+
+# Correct Orientation
+echo "Step 3: Correct orientation"
+
+fslswapdim $temp_dir/temp2 -x z y $outname
+fslorient -deleteorient $outname
+fslorient -setqformcode 1 $outname
+
+
+exit:

@@ -1,0 +1,14 @@
+#!/bin/tcsh
+
+set input = $1
+set output = $2
+rm -f temp?+orig*
+3dcopy $input+orig temp1
+# Align to HRanat
+3drefit -dyorigin 50 -dzorigin 10 temp1+orig.
+#3drotate -NN -rotate 0I 0R 0A -ashift 5.5S -5.5L 2P -prefix temp2 temp1+orig.
+3drotate -NN -rotate 0I 0R 0A -ashift 5.5S -6L 0P -prefix temp2 temp1+orig.
+# Align to CARET
+3dcopy temp2+orig temp3
+3drefit -dyorigin -54 temp3+orig
+3drotate -NN -rotate 0I 0R 0A -ashift 0S 3L 3.70P -prefix $output temp3+orig

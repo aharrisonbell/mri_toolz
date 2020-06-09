@@ -1,0 +1,533 @@
+#/bin/tcsh
+# @MGH1_PrepTimeSeries Script
+# Started Mar.2006, Latest update March 2, 2006
+# This script outputs mean values per TR per condition
+# It is meant to for conducting time series analysis
+
+set input_ts = Wiggum_AllSessions+orig
+set output_ts = Wiggum_Norm
+set out_dir = $PWD/
+set prefix = Wiggum
+
+
+############################################################################
+# STEP 1.0 - Prepare TIME SERIES Analysis
+# Normally this would be done on detrended data but there is no trend present
+# in the data now so...
+############################################################################
+
+rm -f ./temp/${output_ts}_temp_* ./temp/${output_ts}_mean_*
+rm -f ./temp/${output_ts}_AllConds* ./${output_ts}_AllConds*
+rm -f ${output_ts}_mean*
+rm -f ${output_ts}_temp_*
+ 
+# mkface condition
+echo "...Compiling data from mkface condition"
+ 
+3dcalc \
+-a ${input_ts}'[138..156]' \
+-b ${input_ts}'[218..236]' \
+-c ${input_ts}'[388..406]' \
+-d ${input_ts}'[528..546]' \
+-e ${input_ts}'[758..776]' \
+-f ${input_ts}'[958..976]' \
+-g ${input_ts}'[1158..1176]' \
+-h ${input_ts}'[1238..1256]' \
+-i ${input_ts}'[1408..1426]' \
+-j ${input_ts}'[1548..1566]' \
+-k ${input_ts}'[1778..1796]' \
+-l ${input_ts}'[1978..1996]' \
+-m ${input_ts}'[2178..2196]' \
+-n ${input_ts}'[2258..2276]' \
+-o ${input_ts}'[2428..2446]' \
+-p ${input_ts}'[2568..2586]' \
+-q ${input_ts}'[2798..2816]' \
+-r ${input_ts}'[2998..3016]' \
+-s ${input_ts}'[3198..3216]' \
+-t ${input_ts}'[3278..3296]' \
+-u ${input_ts}'[3448..3466]' \
+-v ${input_ts}'[3588..3606]' \
+-w ${input_ts}'[3818..3836]' \
+-x ${input_ts}'[4018..4036]' \
+-y ${input_ts}'[4218..4236]' \
+-z ${input_ts}'[4298..4316]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_mkface1
+ 
+3dcalc \
+-a ${input_ts}'[4468..4486]' \
+-b ${input_ts}'[4608..4626]' \
+-c ${input_ts}'[4838..4856]' \
+-d ${input_ts}'[5038..5056]' \
+-e ${input_ts}'[5238..5256]' \
+-f ${input_ts}'[5318..5336]' \
+-g ${input_ts}'[5488..5506]' \
+-h ${input_ts}'[5628..5646]' \
+-i ${input_ts}'[5858..5876]' \
+-j ${input_ts}'[6058..6076]' \
+-k ${input_ts}'[6258..6276]' \
+-l ${input_ts}'[6338..6356]' \
+-m ${input_ts}'[6508..6526]' \
+-n ${input_ts}'[6648..6666]' \
+-o ${input_ts}'[6878..6896]' \
+-p ${input_ts}'[7078..7096]' \
+-q ${input_ts}'[7278..7296]' \
+-r ${input_ts}'[7358..7376]' \
+-s ${input_ts}'[7528..7546]' \
+-t ${input_ts}'[7668..7686]' \
+-u ${input_ts}'[7898..7916]' \
+-v ${input_ts}'[8098..8116]' \
+-w ${input_ts}'[8298..8316]' \
+-x ${input_ts}'[8378..8396]' \
+-y ${input_ts}'[8548..8566]' \
+-z ${input_ts}'[8688..8706]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_mkface2
+ 
+3dcalc \
+-a ${input_ts}'[8918..8936]' \
+-b ${input_ts}'[9118..9136]' \
+-c ${input_ts}'[9318..9336]' \
+-d ${input_ts}'[9398..9416]' \
+-e ${input_ts}'[9568..9586]' \
+-f ${input_ts}'[9708..9726]' \
+-g ${input_ts}'[9938..9956]' \
+-h ${input_ts}'[10138..10156]' \
+-i ${input_ts}'[10338..10356]' \
+-j ${input_ts}'[10418..10436]' \
+-k ${input_ts}'[10588..10606]' \
+-l ${input_ts}'[10728..10746]' \
+-m ${input_ts}'[10958..10976]' \
+-n ${input_ts}'[11158..11176]' \
+-o ${input_ts}'[11358..11376]' \
+-p ${input_ts}'[11438..11456]' \
+-q ${input_ts}'[11608..11626]' \
+-r ${input_ts}'[11748..11766]' \
+-s ${input_ts}'[11978..11996]' \
+-t ${input_ts}'[12178..12196]' \
+-u ${input_ts}'[12378..12396]' \
+-v ${input_ts}'[12458..12476]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v' \
+-prefix ${output_ts}_temp_mkface3
+ 
+3dcalc \
+-a ${output_ts}_temp_mkface1+orig \
+-b ${output_ts}_temp_mkface2+orig \
+-c ${output_ts}_temp_mkface3+orig \
+-expr '(a+b+c)/74' \
+-prefix ${output_ts}_mean_mkface
+ 
+ 
+ 
+# mkbody condition
+echo "...Compiling data from mkbody condition"
+ 
+3dcalc \
+-a ${input_ts}'[78..96]' \
+-b ${input_ts}'[308..326]' \
+-c ${input_ts}'[478..496]' \
+-d ${input_ts}'[618..636]' \
+-e ${input_ts}'[818..836]' \
+-f ${input_ts}'[868..886]' \
+-g ${input_ts}'[1098..1116]' \
+-h ${input_ts}'[1328..1346]' \
+-i ${input_ts}'[1498..1516]' \
+-j ${input_ts}'[1638..1656]' \
+-k ${input_ts}'[1838..1856]' \
+-l ${input_ts}'[1888..1906]' \
+-m ${input_ts}'[2118..2136]' \
+-n ${input_ts}'[2348..2366]' \
+-o ${input_ts}'[2518..2536]' \
+-p ${input_ts}'[2658..2676]' \
+-q ${input_ts}'[2858..2876]' \
+-r ${input_ts}'[2908..2926]' \
+-s ${input_ts}'[3138..3156]' \
+-t ${input_ts}'[3368..3386]' \
+-u ${input_ts}'[3538..3556]' \
+-v ${input_ts}'[3678..3696]' \
+-w ${input_ts}'[3878..3896]' \
+-x ${input_ts}'[3928..3946]' \
+-y ${input_ts}'[4158..4176]' \
+-z ${input_ts}'[4388..4406]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_mkbody1
+ 
+3dcalc \
+-a ${input_ts}'[4558..4576]' \
+-b ${input_ts}'[4698..4716]' \
+-c ${input_ts}'[4898..4916]' \
+-d ${input_ts}'[4948..4966]' \
+-e ${input_ts}'[5178..5196]' \
+-f ${input_ts}'[5408..5426]' \
+-g ${input_ts}'[5578..5596]' \
+-h ${input_ts}'[5718..5736]' \
+-i ${input_ts}'[5918..5936]' \
+-j ${input_ts}'[5968..5986]' \
+-k ${input_ts}'[6198..6216]' \
+-l ${input_ts}'[6428..6446]' \
+-m ${input_ts}'[6598..6616]' \
+-n ${input_ts}'[6738..6756]' \
+-o ${input_ts}'[6938..6956]' \
+-p ${input_ts}'[6988..7006]' \
+-q ${input_ts}'[7218..7236]' \
+-r ${input_ts}'[7448..7466]' \
+-s ${input_ts}'[7618..7636]' \
+-t ${input_ts}'[7758..7776]' \
+-u ${input_ts}'[7958..7976]' \
+-v ${input_ts}'[8008..8026]' \
+-w ${input_ts}'[8238..8256]' \
+-x ${input_ts}'[8468..8486]' \
+-y ${input_ts}'[8638..8656]' \
+-z ${input_ts}'[8778..8796]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_mkbody2
+ 
+3dcalc \
+-a ${input_ts}'[8978..8996]' \
+-b ${input_ts}'[9028..9046]' \
+-c ${input_ts}'[9258..9276]' \
+-d ${input_ts}'[9488..9506]' \
+-e ${input_ts}'[9658..9676]' \
+-f ${input_ts}'[9798..9816]' \
+-g ${input_ts}'[9998..10016]' \
+-h ${input_ts}'[10048..10066]' \
+-i ${input_ts}'[10278..10296]' \
+-j ${input_ts}'[10508..10526]' \
+-k ${input_ts}'[10678..10696]' \
+-l ${input_ts}'[10818..10836]' \
+-m ${input_ts}'[11018..11036]' \
+-n ${input_ts}'[11068..11086]' \
+-o ${input_ts}'[11298..11316]' \
+-p ${input_ts}'[11528..11546]' \
+-q ${input_ts}'[11698..11716]' \
+-r ${input_ts}'[11838..11856]' \
+-s ${input_ts}'[12038..12056]' \
+-t ${input_ts}'[12088..12106]' \
+-u ${input_ts}'[12318..12336]' \
+-v ${input_ts}'[12548..12566]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v' \
+-prefix ${output_ts}_temp_mkbody3
+ 
+3dcalc \
+-a ${output_ts}_temp_mkbody1+orig \
+-b ${output_ts}_temp_mkbody2+orig \
+-c ${output_ts}_temp_mkbody3+orig \
+-expr '(a+b+c)/74' \
+-prefix ${output_ts}_mean_mkbody
+ 
+ 
+ 
+# objects condition
+echo "...Compiling data from objects condition"
+ 
+3dcalc \
+-a ${input_ts}'[48..66]' \
+-b ${input_ts}'[248..266]' \
+-c ${input_ts}'[358..376]' \
+-d ${input_ts}'[558..576]' \
+-e ${input_ts}'[788..806]' \
+-f ${input_ts}'[988..1006]' \
+-g ${input_ts}'[1068..1086]' \
+-h ${input_ts}'[1268..1286]' \
+-i ${input_ts}'[1378..1396]' \
+-j ${input_ts}'[1578..1596]' \
+-k ${input_ts}'[1808..1826]' \
+-l ${input_ts}'[2008..2026]' \
+-m ${input_ts}'[2088..2106]' \
+-n ${input_ts}'[2288..2306]' \
+-o ${input_ts}'[2398..2416]' \
+-p ${input_ts}'[2598..2616]' \
+-q ${input_ts}'[2828..2846]' \
+-r ${input_ts}'[3028..3046]' \
+-s ${input_ts}'[3108..3126]' \
+-t ${input_ts}'[3308..3326]' \
+-u ${input_ts}'[3418..3436]' \
+-v ${input_ts}'[3618..3636]' \
+-w ${input_ts}'[3848..3866]' \
+-x ${input_ts}'[4048..4066]' \
+-y ${input_ts}'[4128..4146]' \
+-z ${input_ts}'[4328..4346]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_objects1
+ 
+3dcalc \
+-a ${input_ts}'[4438..4456]' \
+-b ${input_ts}'[4638..4656]' \
+-c ${input_ts}'[4868..4886]' \
+-d ${input_ts}'[5068..5086]' \
+-e ${input_ts}'[5148..5166]' \
+-f ${input_ts}'[5348..5366]' \
+-g ${input_ts}'[5458..5476]' \
+-h ${input_ts}'[5658..5676]' \
+-i ${input_ts}'[5888..5906]' \
+-j ${input_ts}'[6088..6106]' \
+-k ${input_ts}'[6168..6186]' \
+-l ${input_ts}'[6368..6386]' \
+-m ${input_ts}'[6478..6496]' \
+-n ${input_ts}'[6678..6696]' \
+-o ${input_ts}'[6908..6926]' \
+-p ${input_ts}'[7108..7126]' \
+-q ${input_ts}'[7188..7206]' \
+-r ${input_ts}'[7388..7406]' \
+-s ${input_ts}'[7498..7516]' \
+-t ${input_ts}'[7698..7716]' \
+-u ${input_ts}'[7928..7946]' \
+-v ${input_ts}'[8128..8146]' \
+-w ${input_ts}'[8208..8226]' \
+-x ${input_ts}'[8408..8426]' \
+-y ${input_ts}'[8518..8536]' \
+-z ${input_ts}'[8718..8736]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_objects2
+ 
+3dcalc \
+-a ${input_ts}'[8948..8966]' \
+-b ${input_ts}'[9148..9166]' \
+-c ${input_ts}'[9228..9246]' \
+-d ${input_ts}'[9428..9446]' \
+-e ${input_ts}'[9538..9556]' \
+-f ${input_ts}'[9738..9756]' \
+-g ${input_ts}'[9968..9986]' \
+-h ${input_ts}'[10168..10186]' \
+-i ${input_ts}'[10248..10266]' \
+-j ${input_ts}'[10448..10466]' \
+-k ${input_ts}'[10558..10576]' \
+-l ${input_ts}'[10758..10776]' \
+-m ${input_ts}'[10988..11006]' \
+-n ${input_ts}'[11188..11206]' \
+-o ${input_ts}'[11268..11286]' \
+-p ${input_ts}'[11468..11486]' \
+-q ${input_ts}'[11578..11596]' \
+-r ${input_ts}'[11778..11796]' \
+-s ${input_ts}'[12008..12026]' \
+-t ${input_ts}'[12208..12226]' \
+-u ${input_ts}'[12288..12306]' \
+-v ${input_ts}'[12488..12506]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v' \
+-prefix ${output_ts}_temp_objects3
+ 
+3dcalc \
+-a ${output_ts}_temp_objects1+orig \
+-b ${output_ts}_temp_objects2+orig \
+-c ${output_ts}_temp_objects3+orig \
+-expr '(a+b+c)/74' \
+-prefix ${output_ts}_mean_objects
+ 
+ 
+ 
+# places condition
+echo "...Compiling data from places condition"
+ 
+3dcalc \
+-a ${input_ts}'[18..36]' \
+-b ${input_ts}'[278..296]' \
+-c ${input_ts}'[448..466]' \
+-d ${input_ts}'[648..666]' \
+-e ${input_ts}'[698..716]' \
+-f ${input_ts}'[928..946]' \
+-g ${input_ts}'[1038..1056]' \
+-h ${input_ts}'[1298..1316]' \
+-i ${input_ts}'[1468..1486]' \
+-j ${input_ts}'[1668..1686]' \
+-k ${input_ts}'[1718..1736]' \
+-l ${input_ts}'[1948..1966]' \
+-m ${input_ts}'[2058..2076]' \
+-n ${input_ts}'[2318..2336]' \
+-o ${input_ts}'[2488..2506]' \
+-p ${input_ts}'[2688..2706]' \
+-q ${input_ts}'[2738..2756]' \
+-r ${input_ts}'[2968..2986]' \
+-s ${input_ts}'[3078..3096]' \
+-t ${input_ts}'[3338..3356]' \
+-u ${input_ts}'[3508..3526]' \
+-v ${input_ts}'[3708..3726]' \
+-w ${input_ts}'[3758..3776]' \
+-x ${input_ts}'[3988..4006]' \
+-y ${input_ts}'[4098..4116]' \
+-z ${input_ts}'[4358..4376]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_places1
+ 
+3dcalc \
+-a ${input_ts}'[4528..4546]' \
+-b ${input_ts}'[4728..4746]' \
+-c ${input_ts}'[4778..4796]' \
+-d ${input_ts}'[5008..5026]' \
+-e ${input_ts}'[5118..5136]' \
+-f ${input_ts}'[5378..5396]' \
+-g ${input_ts}'[5548..5566]' \
+-h ${input_ts}'[5748..5766]' \
+-i ${input_ts}'[5798..5816]' \
+-j ${input_ts}'[6028..6046]' \
+-k ${input_ts}'[6138..6156]' \
+-l ${input_ts}'[6398..6416]' \
+-m ${input_ts}'[6568..6586]' \
+-n ${input_ts}'[6768..6786]' \
+-o ${input_ts}'[6818..6836]' \
+-p ${input_ts}'[7048..7066]' \
+-q ${input_ts}'[7158..7176]' \
+-r ${input_ts}'[7418..7436]' \
+-s ${input_ts}'[7588..7606]' \
+-t ${input_ts}'[7788..7806]' \
+-u ${input_ts}'[7838..7856]' \
+-v ${input_ts}'[8068..8086]' \
+-w ${input_ts}'[8178..8196]' \
+-x ${input_ts}'[8438..8456]' \
+-y ${input_ts}'[8608..8626]' \
+-z ${input_ts}'[8808..8826]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_places2
+ 
+3dcalc \
+-a ${input_ts}'[8858..8876]' \
+-b ${input_ts}'[9088..9106]' \
+-c ${input_ts}'[9198..9216]' \
+-d ${input_ts}'[9458..9476]' \
+-e ${input_ts}'[9628..9646]' \
+-f ${input_ts}'[9828..9846]' \
+-g ${input_ts}'[9878..9896]' \
+-h ${input_ts}'[10108..10126]' \
+-i ${input_ts}'[10218..10236]' \
+-j ${input_ts}'[10478..10496]' \
+-k ${input_ts}'[10648..10666]' \
+-l ${input_ts}'[10848..10866]' \
+-m ${input_ts}'[10898..10916]' \
+-n ${input_ts}'[11128..11146]' \
+-o ${input_ts}'[11238..11256]' \
+-p ${input_ts}'[11498..11516]' \
+-q ${input_ts}'[11668..11686]' \
+-r ${input_ts}'[11868..11886]' \
+-s ${input_ts}'[11918..11936]' \
+-t ${input_ts}'[12148..12166]' \
+-u ${input_ts}'[12258..12276]' \
+-v ${input_ts}'[12518..12536]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_places3
+ 
+3dcalc \
+-a ${output_ts}_temp_places1+orig \
+-b ${output_ts}_temp_places2+orig \
+-c ${output_ts}_temp_places3+orig \
+-expr '(a+b+c)/74' \
+-prefix ${output_ts}_mean_places
+ 
+ 
+ 
+# scramb condition
+echo "...Compiling data from scramb condition"
+ 
+3dcalc \
+-a ${input_ts}'[108..126]' \
+-b ${input_ts}'[188..206]' \
+-c ${input_ts}'[418..436]' \
+-d ${input_ts}'[588..606]' \
+-e ${input_ts}'[728..746]' \
+-f ${input_ts}'[898..916]' \
+-g ${input_ts}'[1128..1146]' \
+-h ${input_ts}'[1208..1226]' \
+-i ${input_ts}'[1438..1456]' \
+-j ${input_ts}'[1608..1626]' \
+-k ${input_ts}'[1748..1766]' \
+-l ${input_ts}'[1918..1936]' \
+-m ${input_ts}'[2148..2166]' \
+-n ${input_ts}'[2228..2246]' \
+-o ${input_ts}'[2458..2476]' \
+-p ${input_ts}'[2628..2646]' \
+-q ${input_ts}'[2768..2786]' \
+-r ${input_ts}'[2938..2956]' \
+-s ${input_ts}'[3168..3186]' \
+-t ${input_ts}'[3248..3266]' \
+-u ${input_ts}'[3478..3496]' \
+-v ${input_ts}'[3648..3666]' \
+-w ${input_ts}'[3788..3806]' \
+-x ${input_ts}'[3958..3976]' \
+-y ${input_ts}'[4188..4206]' \
+-z ${input_ts}'[4268..4286]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_scramb1
+ 
+3dcalc \
+-a ${input_ts}'[4498..4516]' \
+-b ${input_ts}'[4668..4686]' \
+-c ${input_ts}'[4808..4826]' \
+-d ${input_ts}'[4978..4996]' \
+-e ${input_ts}'[5208..5226]' \
+-f ${input_ts}'[5288..5306]' \
+-g ${input_ts}'[5518..5536]' \
+-h ${input_ts}'[5688..5706]' \
+-i ${input_ts}'[5828..5846]' \
+-j ${input_ts}'[5998..6016]' \
+-k ${input_ts}'[6228..6246]' \
+-l ${input_ts}'[6308..6326]' \
+-m ${input_ts}'[6538..6556]' \
+-n ${input_ts}'[6708..6726]' \
+-o ${input_ts}'[6848..6866]' \
+-p ${input_ts}'[7018..7036]' \
+-q ${input_ts}'[7248..7266]' \
+-r ${input_ts}'[7328..7346]' \
+-s ${input_ts}'[7558..7576]' \
+-t ${input_ts}'[7728..7746]' \
+-u ${input_ts}'[7868..7886]' \
+-v ${input_ts}'[8038..8056]' \
+-w ${input_ts}'[8268..8286]' \
+-x ${input_ts}'[8348..8366]' \
+-y ${input_ts}'[8578..8596]' \
+-z ${input_ts}'[8748..8766]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_scramb2
+ 
+3dcalc \
+-a ${input_ts}'[8888..8906]' \
+-b ${input_ts}'[9058..9076]' \
+-c ${input_ts}'[9288..9306]' \
+-d ${input_ts}'[9368..9386]' \
+-e ${input_ts}'[9598..9616]' \
+-f ${input_ts}'[9768..9786]' \
+-g ${input_ts}'[9908..9926]' \
+-h ${input_ts}'[10078..10096]' \
+-i ${input_ts}'[10308..10326]' \
+-j ${input_ts}'[10388..10406]' \
+-k ${input_ts}'[10618..10636]' \
+-l ${input_ts}'[10788..10806]' \
+-m ${input_ts}'[10928..10946]' \
+-n ${input_ts}'[11098..11116]' \
+-o ${input_ts}'[11328..11346]' \
+-p ${input_ts}'[11408..11426]' \
+-q ${input_ts}'[11638..11656]' \
+-r ${input_ts}'[11808..11826]' \
+-s ${input_ts}'[11948..11966]' \
+-t ${input_ts}'[12118..12136]' \
+-u ${input_ts}'[12348..12366]' \
+-v ${input_ts}'[12428..12446]' \
+-expr 'a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z' \
+-prefix ${output_ts}_temp_scramb3
+ 
+3dcalc \
+-a ${output_ts}_temp_scramb1+orig \
+-b ${output_ts}_temp_scramb2+orig \
+-c ${output_ts}_temp_scramb3+orig \
+-expr '(a+b+c)/74' \
+-prefix ${output_ts}_mean_scramb
+
+
+
+rm -f ${output_ts}_temp_*
+
+concat_all:
+
+echo "Concatenating all conditions..."
+3dTcat -verbose -prefix ./temp/${output_ts}_AllConds \
+${output_ts}_mean_scramb+orig.HEAD \
+${output_ts}_mean_mkface+orig.HEAD \
+${output_ts}_mean_scramb+orig.HEAD \
+${output_ts}_mean_mkbody+orig.HEAD \
+${output_ts}_mean_scramb+orig.HEAD \
+${output_ts}_mean_objects+orig.HEAD \
+${output_ts}_mean_scramb+orig.HEAD \
+${output_ts}_mean_places+orig.HEAD \
+${output_ts}_mean_scramb+orig.HEAD
+echo "...Done."
+echo " "
+echo "...Subtracting from 100 to give % MION Signal Change..."
+3dcalc -a ./temp/${output_ts}_AllConds+orig -expr '100-a' -prefix ${output_ts}_AllCondsMION
+echo ".....Done."

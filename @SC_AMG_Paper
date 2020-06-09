@@ -1,0 +1,231 @@
+#!/bin/tcsh
+# set verbose # For Debugging Purposes
+# @SC_AMG_Paper (aka @Publish_Awesome_Data!)
+# by AHB, 
+set version = 1.13-09-2012
+# Script to process human and monkey DTI data for DTI-SC-Amygdala Paper
+# (Rafal et al., 2012)
+
+####################################################################################################
+#       SET UP ANALYSIS HERE (This is specific for each analysis
+#
+# Directories
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+set human_dir = ~/Documents/Manuscripts_Grants/DTI_SC_Amygdala/HumanData/
+set human_out = ~/Documents/Manuscripts_Grants/DTI_SC_Amygdala/HumanData/output
+set nhp_dir = ~/Documents/Manuscripts_Grants/DTI_SC_Amygdala/MonkeyData_all/
+set nhp_out = ~/Documents/Manuscripts_Grants/DTI_SC_Amygdala/MonkeyData_all/output
+set temp_dir = ~/Documents/Manuscripts_Grants/DTI_SC_Amygdala/temp_dir
+set email = "andrew.bell@psy.ox.ac.uk"
+
+set kernel = 4 # diameter in mm of dilation
+set kernel_nhp = 2 # diameter in mm of dilation
+
+# Standard Atlases
+set caret_brain = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+set human_brain = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+
+# Program Options
+set REV_OPTION = "Y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+####################################################################################################
+
+# Stage 1 - Human Data
+
+if ($#argv == 0) then
+	echo " "
+	echo "************************************"
+	echo "@SC_AMG_Paper by AHB, V."$version
+	echo "************************************"
+	echo " "
+	echo "Script for processing manganese-enhanced MRI data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, etc.  If the script doesn't work, try altering the"
+	echo " default values (edit this script)."
+	echo " "
+	echo "INPUT: @SC_AMG_Paper <ANALYSIS_NAME> <METHOD> <STEP>"
+	echo " "
+endif
+
+mkdir -p $human_out 
+mkdir -p $nhp_out
+mkdir -p $temp_dir
+
+if ($1 == 1) then
+	goto part1
+else
+	goto part2
+endif
+
+part1:
+echo "#######################"
+echo "# Part 1 - Human Data #"
+echo "#######################"
+echo 
+cd $human_dir
+foreach hum_subj (1 2 3 4 5)
+	echo " " 
+	echo "Analysing Human Subject "$hum_subj
+
+foreach hemi (L R)
+	echo ".Hemisphere: "$hemi
+	echo "...Step 1 - Normalise datasets by Waytotal"
+	set waytotal = (`more human${hum_subj}_${hemi}_sc_amyg_waytotal`)
+	 fslmaths human${hum_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div $waytotal ${temp_dir}/human${hum_subj}_temp1 -odt float
+	 fslmaths ${temp_dir}/human${hum_subj}_temp1.nii.gz -mul 100 ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_normalisedWT_native -odt float
+	
+	echo "...Step 2 - Normalise datasets by Max Value in FDT"
+	set temp = `fslstats human${hum_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -R`
+	set normaliser = `echo $temp[2]`
+	fslmaths human${hum_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div $normaliser ${temp_dir}/human${hum_subj}_temp1 -odt float
+	fslmaths ${temp_dir}/human${hum_subj}_temp1.nii.gz -mul 100 ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_normalisedMAX_native -odt float
+
+	echo "...Step 3 - Binarise volumes aligned to own brain"
+	fslmaths human${hum_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div human${hum_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_Bin_native
+	
+	echo "...Step 4 - Binarise volumes aligned to standard brain"
+	fslmaths human${hum_subj}_${hemi}_sc_amyg_align2standard.nii.gz -div human${hum_subj}_${hemi}_sc_amyg_align2standard.nii.gz ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_Bin_standard -odt int
+		
+	echo "...Step 5 - Smooth Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"	
+	fslmaths ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_Bin_standard.nii.gz -kernel sphere $kernel -dilM $human_out/human${hum_subj}_${hemi}_sc_amyg_fdt_Bin_5mmSphere_standard -odt int
+
+	echo "...Step 6 - Compile data for FDT percentages (normalised to waytotals)"
+	fslstats ${human_out}/human${hum_subj}_${hemi}_sc_amyg_fdt_normalisedWT_native.nii.gz -M > ${human_out}/human${hum_subj}_${hemi}_fdt_percentWT	
+end
+end
+echo " "
+echo "# Step 6 - Add all Binarised volumes (aligned to standard brain)"
+cd $human_out
+fslmaths human1_L_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human2_L_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human3_L_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human4_L_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human5_L_sc_amyg_fdt_Bin_standard.nii.gz \
+	${human_out}/human_L_binarised_total_standard -odt int
+
+fslmaths human1_R_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human2_R_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human3_R_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human4_R_sc_amyg_fdt_Bin_standard.nii.gz \
+	-add human5_R_sc_amyg_fdt_Bin_standard.nii.gz \
+	${human_out}/human_R_binarised_total_standard -odt int
+
+fslmaths human1_L_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human2_L_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human3_L_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human4_L_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human5_L_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	${human_out}/human_L_binarised_total_5mmSphere_standard -odt int
+	
+fslmaths human1_R_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human2_R_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human3_R_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human4_R_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	-add human5_R_sc_amyg_fdt_Bin_5mmSphere_standard.nii.gz \
+	${human_out}/human_R_binarised_total_5mmSphere_standard -odt int
+
+part2:
+echo "########################"
+echo "# Part 2 - Monkey Data #"
+echo "########################"
+echo 
+cd $nhp_dir
+mkdir -p omats
+
+#foreach nhp_subj (mi112 mi114 mi115 mi117 mi121 mi123) # old
+#foreach nhp_subj (mi112 mi114 mi115 mi117 mi120 mi121 mi123) # new
+foreach nhp_subj (mi115) # new
+	echo " " 
+	echo "Analysing Monkey Subject "$nhp_subj
+
+	echo "...Step 1 - Correct and align structurals"
+	fslmaths ${nhp_subj}_StrippedAnat_native.nii.gz -mul 100 ${nhp_out}/${nhp_subj}_StrippedBrain -odt float
+	flirt -in ${nhp_out}/${nhp_subj}_StrippedBrain.nii.gz -ref $caret_brain -omat ./omats/${nhp_subj}_struct2caret.mat -out ${nhp_out}/${nhp_subj}_struct2caret
+
+foreach hemi (L R)
+	echo ".Hemisphere: "$hemi
+	
+	echo "...Step 2 - Normalise datasets by Waytotal"
+	set waytotal = (`more ${nhp_subj}_${hemi}_sc_amyg_waytotal`)
+	fslmaths ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div $waytotal ${temp_dir}/${nhp_subj}_temp1 -odt float
+	fslmaths ${temp_dir}/${nhp_subj}_temp1.nii.gz -mul 100 ${nhp_out}/${nhp_subj}_${hemi}_sc_amyg_fdt_normalisedWT_native -odt float
+	
+	echo "...Step 3 - Normalise datasets by Max Value in FDT"
+	set temp = `fslstats ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -R`
+	set normaliser = `echo $temp[2]`
+	fslmaths ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div $normaliser ${temp_dir}/${nhp_subj}_temp1 -odt float
+	fslmaths ${temp_dir}/${nhp_subj}_temp1.nii.gz -mul 100 ${nhp_out}/${nhp_subj}_${hemi}_sc_amyg_fdt_normalisedMAX_native -odt float
+
+	echo "...Step 4 - Binarise volumes aligned to own brain"
+	fslmaths ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -div ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz ${nhp_out}/${nhp_subj}_${hemi}_sc_amyg_fdt_Bin_native -odt int
+	
+	echo "...Step 5 - Align FDT paths to High Resolution Structurals (fdt2struct)"
+	flirt -in ${nhp_subj}_mergedB0s_fix.nii.gz -ref ${nhp_out}/${nhp_subj}_StrippedBrain.nii.gz -omat ./omats/${nhp_subj}_dti2struct.mat -out ${temp_dir}/${nhp_subj}_dti2struct
+	flirt -in ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -ref ${nhp_out}/${nhp_subj}_StrippedBrain.nii.gz -applyxfm -init ./omats/${nhp_subj}_dti2struct.mat -out ${nhp_out}/${nhp_subj}_${hemi}_fdt2struct
+
+	echo "...Step 6 - Align FDT paths to Standard Brain (fdt2caret)"
+	flirt -in ${nhp_subj}_mergedB0s_fix.nii.gz -ref $caret_brain -omat ./omats/${nhp_subj}_dti2caret.mat -out ${temp_dir}/${nhp_subj}_dti2caret
+	flirt -in ${nhp_subj}_${hemi}_sc_amyg_fdt_paths.nii.gz -ref $caret_brain -applyxfm -init ./omats/${nhp_subj}_dti2caret.mat -out ${nhp_out}/${nhp_subj}_${hemi}_fdt2caret
+	
+	echo "...Step 7 - Binarise volumes aligned to standard brain"
+	fslmaths ${nhp_out}/${nhp_subj}_${hemi}_fdt2caret.nii.gz -div ${nhp_out}/${nhp_subj}_${hemi}_fdt2caret.nii.gz ${nhp_out}/${nhp_subj}_${hemi}_fdt_Bin_caret -odt int
+		
+	echo "...Step 8 - Smooth Tracts using spherical ROI approach (dilate tracts by *kernel* mm)"	
+	fslmaths ${nhp_out}/${nhp_subj}_${hemi}_fdt_Bin_caret.nii.gz -kernel sphere $kernel_nhp -dilM ${nhp_out}/${nhp_subj}_${hemi}_fdt_Bin_mmSphere_caret -odt int
+
+	echo "...Step 9 - Compile data for FDT percentages (normalised to waytotals)"
+	fslstats ${nhp_out}/${nhp_subj}_${hemi}_sc_amyg_fdt_normalisedWT_native.nii.gz -M > ${nhp_out}/${nhp_subj}_${hemi}_fdt_percentWT	
+
+end
+end
+
+echo " "
+echo "# Step 10 - Add all Binarised volumes (aligned to standard brain)"
+cd $nhp_out
+fslmaths nhp1_L_fdt_Bin_caret.nii.gz \
+	-add nhp2_L_fdt_Bin_caret.nii.gz \
+	-add nhp3_L_fdt_Bin_caret.nii.gz \
+	-add nhp4_L_fdt_Bin_caret.nii.gz \
+	-add nhp5_L_fdt_Bin_caret.nii.gz \
+	${nhp_out}/nhp_L_binarised_total_caret -odt int
+
+fslmaths nhp1_R_fdt_Bin_caret.nii.gz \
+	-add nhp2_R_fdt_Bin_caret.nii.gz \
+	-add nhp3_R_fdt_Bin_caret.nii.gz \
+	-add nhp4_R_fdt_Bin_caret.nii.gz \
+	-add nhp5_R_fdt_Bin_caret.nii.gz \
+	${nhp_out}/nhp_R_binarised_total_caret -odt int
+
+fslmaths nhp1_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp2_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp3_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp4_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp5_L_fdt_Bin_mmSphere_caret.nii.gz \
+	${nhp_out}/nhp_L_binarised_total_mmSphere_caret -odt int
+	
+fslmaths nhp1_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp2_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp3_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp4_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add nhp5_R_fdt_Bin_mmSphere_caret.nii.gz \
+	${nhp_out}/nhp_R_binarised_total_mmSphere_caret -odt int
+
+fslmaths mi112_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi114_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi115_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi117_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi120_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi121_L_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi123_L_fdt_Bin_mmSphere_caret.nii.gz \
+	${nhp_out}/nhp_L_binarised_total_mmSphere_caret -odt int
+	
+fslmaths mi112_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi114_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi115_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi117_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi120_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi121_R_fdt_Bin_mmSphere_caret.nii.gz \
+	-add mi123_R_fdt_Bin_mmSphere_caret.nii.gz \
+	${nhp_out}/nhp_R_binarised_total_mmSphere_caret -odt int
+
+
+exit:

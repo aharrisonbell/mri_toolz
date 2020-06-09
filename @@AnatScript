@@ -1,0 +1,223 @@
+#!/bin/tcsh
+# @@AnatScript (aka @MakeAwesomeBrain)
+# by AHB
+set version = 1.02-08-2012
+# Script to process and segment structurals (for Caret, FreeSurfer, etc.)
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.
+
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set nii_dir = $PWD/nii_files
+set out_dir = $PWD/structurals
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+#set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+#
+# incoming data labels (the script identifies input data by searching for these threads)
+set mpHR_label = _mprage05x05x05mm1001
+#set mpHR_label = _mprage05x05x05mmlrg
+#set mpHR_label = _mprage05mmFOV256TI493
+set mpLR_label = _mprage1x1x1mmnoIR 
+#set mpLR_label = _mprage1mmnoIRFOV256TI493
+set LRvolume = `ls ${nii_dir}/*${mpLR_label}*.nii*`
+#
+# BET Variables (affects skull-stripping.  Play around with these values if you are having problems)
+set betF = 0.5 # Suggested value: 0.5
+set betG = 0.1 # Suggested values: 0.1, 0.2
+#
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+#
+# Program Options
+set REV_OPTION = "Y"  # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+set AFNI_OPTION = "n" # (y/n) - includes AFNI-based skull stripping.  Useful to compare
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*********************************"
+	echo "@@AnatScript by AHB, V"$version
+	echo "*********************************"
+	echo " "
+	echo "Script for processing structral data.  This script operates with several default values"
+	echo "for things like location of rawdata, volume_name, inclusion of HR/LR volumes, etc.  If"
+	echo "the script doesn't work, try altering the default values (edit this script)."
+	echo " "
+	echo "INPUT: @AnatScript <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " SESSION = Label for data (e.g., MonkeyDate).  This has no impact on the program,"
+	echo "           it simply labels the data in the directory."
+	echo " STEP (optional): perform step X where..."
+	echo "   1) Merge High-Res Volumes"
+	echo "   2) Correct Orientation"
+	echo "   3) Skull Stripping (be sure to manually fix mask)"
+	echo "   4) Align Low-Res to High-Res"
+	echo "   5) Divide HR by LR and mask output (be sure to manually fix mask)"
+	echo "   6) Align to Standard Atlases"
+	echo "   7) Segment Volume"
+	echo " "
+	echo "Note: Default is to perform all steps (leave STEP blank).  Otherwise, run each step one"
+	echo "      at a time."
+	goto exit
+endif
+
+set session_name = $1
+set step = $2
+if ($#argv == 1) then
+	set step = 0
+endif
+mkdir -p $out_dir $temp_dir
+
+# Step 1: Merge HiRes mprages into one volume
+if ($step =~ *1* || $step == 0) then
+	date
+	echo "Step 1: Merge HiRes mprages into one volume"
+	cd $nii_dir
+	set template = "" 
+	set counter = 1 # this counter ensures the proper command line is generated
+	foreach fn (`ls *$mpHR_label*nii*`) 
+		echo "...Merging "$fn
+		if ($counter == 1) then
+			set template = "$fn"
+			set basevolume = "$fn"
+		else
+			echo "......aligning "$fn
+			flirt -in $fn -ref $basevolume -out $temp_dir/temp_mprage${counter}
+			set template = "$template -add ${temp_dir}/temp_mprage${counter}"
+
+		endif
+		@ counter ++
+	end
+	set com_line = "fslmaths $template $temp_dir/${session_name}hr_1Mg"
+	$com_line
+	echo "...Merged file created in "$temp_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $temp_dir/${session_name}hr_1Mg* &
+	endif
+	echo "Step 1: Done".
+	#cat ${session_name}_anatscript_part1 | mail -s "@@AnatScript part 1 done" ${email}
+endif
+
+# Step 2: Correct orientation of all files
+if ($step =~ *2* || $step == 0) then
+	date
+	echo "Step 2: Correcting orientation..." 
+	fslswapdim $temp_dir/${session_name}hr_1Mg.nii.gz x z y $out_dir/${session_name}hr_2MgFx.nii.gz
+	fslorient -deleteorient $out_dir/${session_name}hr_2MgFx.nii.gz 
+	fslorient -setqformcode 1 $out_dir/${session_name}hr_2MgFx.nii.gz 
+		
+	fslswapdim $LRvolume x z y $out_dir/${session_name}lr_1Fx.nii.gz
+	fslorient -deleteorient $out_dir/${session_name}lr_1Fx.nii.gz 
+	fslorient -setqformcode 1 $out_dir/${session_name}lr_1Fx.nii.gz 
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}hr_2MgFx.nii.gz &
+		fslview $out_dir/${session_name}lr_1Fx.nii.gz &
+	endif
+	echo "Step 2: Done.  Be sure to confirm the labels are correct and the capsule appears on the LEFT side"
+	#cat ${session_name}_anatscript_part2 | mail -s "@@AnatScript part 2 done" ${email}
+endif
+
+# Step 3: Skull Stripping
+if ($step =~ *3* || $step == 0) then
+	date
+	echo "Step 3: Skull-stripping merged high-res volume..."
+	bet $out_dir/${session_name}hr_2MgFx $out_dir/${session_name}hr_3MgFxBs -f $betF -g $betG
+
+	# Options:  Can use AFNI as well...
+	if ($AFNI_OPTION == "y"||$AFNI_OPTION == "Y") then
+		echo "...Using AFNI to strip skull..."
+		rm -f $temp_dir/${session_name}hr_3MgFxBsAFNI* $out_dir/${session_name}hr_3MgFxBsAFNI*
+		3dSkullStrip -no_avoid_eyes -surface_coil -pushout -no_use_skull -monkey -ld 50 -niter 750 \
+		-input $out_dir/${session_name}hr_2MgFx* -prefix $temp_dir/${session_name}hr_3MgFxBsAFNI
+		3dAFNItoNIFTI -prefix $out_dir/${session_name}hr_3MgFxBsAFNI $temp_dir/${session_name}hr_3MgFxBsAFNI+orig 
+	endif
+	
+	# Create mask from stripped volume
+	fslmaths $out_dir/${session_name}hr_3MgFxBs.nii.gz -bin -s 2 -thr 0.5 -bin $out_dir/${session_name}_anatmask_rough
+	# cp $out_dir/${session_name}_mask* ./DTI_data
+	
+	echo "...Stripped volume and mask created in "$out_dir
+	echo "...Be sure to check output."
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}hr_2MgFx.nii.gz $out_dir/${session_name}hr_3MgFxBs.nii.gz $out_dir/${session_name}_anatmask_rough.nii.gz &
+	endif
+	echo "Step 3: Done."
+	echo "You must now manually fix the mask - and rename it: 'session_name'_anatmask_fix.nii.gz   e.g., MI00100_anatmask_fix.nii.gz"
+	#cat ${session_name}_anatscript_part3 | mail -s "@@AnatScript part 3 done" ${email}
+endif
+
+# Step 4: Align LOWRES TO HIGHRES
+if ($step =~ *4* || $step == 0) then
+	date
+	echo "Step 4: Using FLIRT to align low-res volume to merged high-res volume..."
+	flirt -in $out_dir/${session_name}lr_1Fx.nii.gz -ref $out_dir/${session_name}hr_2MgFx.nii.gz -dof 6 -omat $out_dir/${session_name}_hr2lr.mat -out $out_dir/${session_name}lr_4FxAl
+	echo "...Aligned low-res volume created in "$out_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}hr_2MgFx.nii.gz $out_dir/${session_name}lr_4FxAl.nii.gz &
+	endif
+	echo "Step 4: Done."
+	#cat ${session_name}_anatscript_part4 | mail -s "@@AnatScript part 4 done" ${email}
+endif
+ 
+# Step 5: Divide HR by LR and mask
+if ($step =~ *5* || $step == 0) then
+ 	date
+ 	echo "Step 5: Dividing high-res merged volume by low-res volume and mask..." 
+  	fslmaths $out_dir/${session_name}hr_2MgFx -div $out_dir/${session_name}lr_4FxAl $temp_dir/${session_name}_HRcorr -odt float
+  	fslmaths $temp_dir/${session_name}_HRcorr -mas $out_dir/${session_name}_anatmask_fix $out_dir/${session_name}hr_StrippedAnat_native
+	cp $out_dir/${session_name}_anatmask_fix.* ./DTI_data
+  	echo "...Corrected merged volume created in "$temp_dir
+	if ($REV_OPTION == "y"||$REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}hr_2MgFx.nii.gz \
+		$temp_dir/${session_name}_HRcorr.nii.gz \
+		$out_dir/${session_name}hr_StrippedAnat_native.nii.gz &
+	endif
+	echo "Step 5: Done."
+	#cat ${session_name}_anatscript_part5 | mail -s "@@AnatScript part 5 done" ${email}
+endif
+
+# Step 6: Align to Standard Atlases
+if ($step =~ *6* || $step == 0) then
+	date
+	echo "Step 6: Align to Standard Atlases..." 
+	flirt -in $out_dir/${session_name}hr_StrippedAnat_native.nii.gz -ref $mni_atlas -dof 9 -omat $out_dir/${session_name}_struct2mni.mat -out $out_dir/${session_name}hr_StrippedAnat_mni
+	flirt -in $out_dir/${session_name}hr_StrippedAnat_native.nii.gz -ref $caret_atlas -dof 9 -omat $out_dir/${session_name}_struct2caret.mat -out $out_dir/${session_name}hr_StrippedAnat_caret
+	echo "...Aligned volumes created in "$out_dir
+	
+	convert_xfm -omat $out_dir/${session_name}_caret2struct.mat -inverse $out_dir/${session_name}_struct2caret.mat
+	convert_xfm -omat $out_dir/${session_name}_mni2struct.mat -inverse $out_dir/${session_name}_struct2mni.mat
+	
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $mni_atlas $out_dir/${session_name}hr_StrippedAnat_mni.nii.gz &
+		fslview $caret_atlas $out_dir/${session_name}hr_StrippedAnat_caret.nii.gz &
+	endif
+	echo "Step 6: Done."
+	#cat ${session_name}_anatscript_part6 | mail -s "@@AnatScript part 6 done" ${email}
+endif
+
+# Step 7: Segment Volume
+if ($step =~ *7* || $step == 0) then
+	date
+	echo "Step 7: Segmenting MPRAGE_noInversion-corrected volume..." 
+	fast -b -B $out_dir/${session_name}hr_StrippedAnat_native
+	if ($REV_OPTION == "y"||$REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}hr_StrippedAnat_native* &
+	endif
+	echo "...Booyah."
+	echo "Step 7: Done."
+	#cat ${session_name}_anatscript_part7 | mail -s "@@AnatScript part 7 done" ${email}
+endif
+exit:

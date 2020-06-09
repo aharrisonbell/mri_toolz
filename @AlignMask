@@ -1,0 +1,103 @@
+#!/bin/tcsh
+# @AlignMask
+# by AHB, started January 2013
+# Version 1.0
+# Script to generate new Anat/DTI mask based on alignment between structurals from two sessions
+
+if ($#argv < 2) then
+	echo " "
+	echo "*******************************"
+	echo "@AlignMask by AHB, V.01.28.2013"
+	echo "*******************************"
+	echo " "
+	echo "INPUT: @AlignMask <options>"
+	echo "where: "
+	echo "	-in <PREFIX> (mandatory): is the patient ID of the session you want to align to the REF session" 
+	echo "	-ref <PREFIX> (mandatory): X is the patient ID of the session you want to align others to" 
+	echo "	-step <1,2,3> (optional)" 
+	echo "  -inweight <filename> (optional): is the file to use to weight the target volume when aligning to REF volume"
+	echo " "
+	echo "Note: this script requires that @AnatScript be run until at least Step 5"
+	goto exit
+endif
+set step = 123 # default to include all steps
+set numarg = `expr $#`
+set cnt = 0
+set inw = 0 # default is to NOT use inweight
+while ($cnt < $numarg)
+	switch ($1) 
+	case -in:
+		set target=$2
+		breaksw
+	case -ref:
+		set ref=$2
+		breaksw
+	case -step:
+		set step=$2
+		breaksw
+	case -inweight:
+		set inweight=$2
+		set inw = 1
+		breaksw
+	default:
+		
+	endsw
+	set cnt = `expr $cnt + 1`
+	shift
+end
+
+set ref_dir = $PWD/${ref}*
+set target_dir = $PWD/${target}*
+mkdir -p $target_dir/temp
+set temp_dir = ${target_dir}/temp
+rm -f ${temp_dir}/ref* ${temp_dir}/targ* ${temp_dir}/tempnewmask*
+set out_dir = ${target_dir}/structurals
+
+echo " "
+echo "Reference Session: "$ref_dir
+echo "Target Session: "$target_dir
+if ($inw == 1) then
+	echo "Inweight Volume: "$inweight
+endif
+echo " "
+
+if ($step =~ *1* || $step == 0) then
+	# Step 1 - Generate divided and masked volumes:
+	echo "Step 1 - Dividing HR-T1 by LR-T2 and masking by head volume"
+	fslmaths ${target_dir}/structurals/${target}hr_2MgFx -div ${target_dir}/structurals/${target}lr_3FxAl ${temp_dir}/target_temp1
+	fslmaths ${ref_dir}/structurals/${ref}hr_2MgFx -div ${ref_dir}/structurals/${ref}lr_3FxAl ${temp_dir}/ref_temp1
+	
+	fslmaths ${temp_dir}/target_temp1 -mas ${target_dir}/structurals/brain_segment/${target}head_outskin_mask ${temp_dir}/target_temp2
+	fslmaths ${temp_dir}/ref_temp1 -mas ${ref_dir}/structurals/brain_segment/${ref}head_outskin_mask ${temp_dir}/ref_temp2
+	#fslview ${temp_dir}/target_temp* ${temp_dir}/ref_temp* &
+	echo " "
+endif
+
+if ($step =~ *2* || $step == 0) then
+	# Step 2 - Align Volumes, using initial mask as REF weighting
+	if ($inw == 0) then	
+		echo "Step 2 - Aligning cropped volumes, using corrected mask as REF weighting"
+		flirt -in ${temp_dir}/target_temp2 -ref ${temp_dir}/ref_temp2 \
+			-refweight ${ref_dir}/structurals/${ref}_anatmask_fix \
+			-omat ${target_dir}/structurals/AlignTo${ref}.omat -out ${temp_dir}/output_temp	
+	elseif ($inw == 1)
+		echo "Step 2 - Aligning cropped volumes, using corrected mask as REF weighting and user-defined TARGET weighting"
+		flirt -in ${temp_dir}/target_temp2 -ref ${temp_dir}/ref_temp2 \
+			-inweight ${target_dir}/structurals/${inweight} \
+			-refweight ${ref_dir}/structurals/${ref}_anatmask_fix \
+			-omat ${target_dir}/structurals/AlignTo${ref}.omat -out ${temp_dir}/output_temp	
+	endif
+	echo " "
+endif	
+if ($step =~ *3* || $step == 0) then
+	# Step 3 - Invert transform and apply to mask
+	echo "Step 3 - Invert transform and apply to mask"
+	convert_xfm -omat ${target_dir}/structurals/AlignTo${ref}_inverse.omat -inverse ${target_dir}/structurals/AlignTo${ref}.omat
+	flirt -in ${ref_dir}/structurals/${ref}_anatmask_fix -ref ${target_dir}/structurals/${target}hr_2MgFx -applyxfm -init ${target_dir}/structurals/AlignTo${ref}_inverse.omat \
+	-out ${temp_dir}/tempnewmask
+	fslmaths ${temp_dir}/tempnewmask -bin ${target_dir}/structurals/${target}_anatmask_auto
+	fslview ${target_dir}/structurals/${target}hr_2MgFx ${target_dir}/structurals/${target}_anatmask_auto &
+
+endif
+exit:
+

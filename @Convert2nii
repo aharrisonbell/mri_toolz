@@ -1,0 +1,158 @@
+#!/bin/tcsh
+# @Convert2nii
+# by AHB, started August 2011
+set version = 1.04-0-2013
+# Oxford Script
+
+if ($#argv < 2) then
+	echo " "
+	echo "*********************************"
+	echo "@Convert2nii by AHB"$version
+	echo "*********************************"
+	echo " "
+	echo "Script to convert DICOMs into nii format.  This program uses load_dicom to convert"
+	echo "the files, but includes a step that truncates the filenames making it suitable for"
+	echo "NHP data. This program also corrects for orientation header that occurs with NHP"
+	echo "data.  Note It should be only necessary to run this program once per dataset."
+	echo " "
+	echo "INPUT: @Convert2nii <INPUT_DIR> <OUTPUT_DIR> <STEP>"
+	echo " "
+	echo "INPUT_DIR/OUTPUT_DIR: Directories where data is located and where the NII files"
+	echo "    should go, relative to current directory."
+	echo " "
+	echo "Example: if current directory is ~/FMRI_STUFF and the individual DICOM folders are located"
+	echo "in ~/FMRI_STUFF/rawdata and the target directory is ~/FMRI_STUFF/nii_files,"
+	echo "the command would be:"
+	echo "    @Convert2nii rawdata nii_files"
+	echo " "
+	echo "STEP: This is an optional argument that allows the user to specify which of the "
+	echo "following steps to run (default is 123):"
+	echo "    1) Shorten File Names (using hardcoded strings)"
+	echo "    2) Load DICOMS"
+	echo "    3) Simple Orientation Correction (suitable for DTI)"
+#	echo "    4) Complex Orientation Correction (default is to skip this step)"
+#	echo "       NOTE: You cannot run 3 and 4"
+	echo "Examples: "
+	echo "    @Convert2nii rawdata nii_files 1     (Run only Step 1)"
+	echo "    @Convert2nii rawdata nii_files 12    (Run Steps 1 and 2)"
+	echo "    @Convert2nii rawdata nii_files 13    (Run Steps 1 and 3)"
+	echo " "
+	echo "Suggested directory structure (keep directory names SHORT, including subdirectory names):"
+	echo "INPUT:  /SubjectName/dicom_data/"
+	echo "OUTPUT: /SubjectName/nii_files/"
+	echo " "
+	echo "Note: for Step1 to work, the DICOM directories must be in INPUT_DIR"
+	echo "Credits: load_dicom, dcm2nii, relabelvolume = FSL Group/FMRIB/KM/Oxford (i.e., not me)"
+	echo " "
+	goto exit
+endif
+
+set indir = $PWD/$1
+set outdir = $PWD/$2
+set step = $3
+if ($#argv == 2) then
+	set step = 123
+endif
+
+mkdir -p $outdir
+set oldstring = MR.1.3.12.2.1107.5.2.32.35211
+#set oldstring = MR.MACAQUE_PROTOCOLS_DATED_EXPERIMENTS_VB17 # This can be changed to whatever is the common thread you wish to eliminate
+set newstring = nhp # This can be changed to whatever you'd like to replace the common thread with
+
+cd $indir
+#echo $PWD
+step1:
+if ($step =~ *1* || $step == 0) then
+# Step 1: Rename files to prepare for load_dicom
+# Explanation: load_dicom has a character limit for filenames (255), which can easily be
+# exceeded when converting files to DICOM.  This step uses SED to remove common threads from all
+# filenames.  Note this step treats ALL folders - so it only needs to be run once
+#foreach dd (`ls $indir`)
+foreach dd (`find . -type d`)
+	cd $dd
+	#echo $PWD
+	echo "Renaming DICOMs in "$dd
+	foreach fn (`ls *.dcm`)
+		set newname=`echo $fn | sed s/$oldstring/$newstring/g`
+		mv $fn $newname
+	end # filename
+	cd $indir
+end # directory
+endif
+
+step2:
+if ($step =~ *2* || $step == 0) then
+# Step 2: Run load_dicom
+# Explanation: load_dicom converts DICOM images into nifti (FSL) format.  This step
+# only needs to be run once, which is why it is paired with 
+cd $indir
+load_dicom -s ./ -u -o $outdir
+endif 
+
+step3:
+if ($step =~ *3* || $step == 0) then
+# Step 3: Simple orientation correction
+# Explanation: because NHPs are often in an orientation that is physically impossible for humans,
+# the default orientation for the images is off.  The following code deletes the existing orientation
+# information and replaces it with a simple, albeit incorrect orientation.  This is suitable for DTI
+# analysis. 
+# Note: this code copies the original to a separate directory called 'bad_orient1' just in case something
+# goes wrong. DON'T USE BOTH STEP 3 AND 4!!!!
+cd $outdir
+mkdir -p $PWD/bad_orient1
+foreach dd (`ls $outdir`)
+	if ($dd != "bad_orient1" ) then
+		set newvol=`echo C_$dd`
+		echo "Correcting orientation (simple correction) for "$dd
+		$FSLDIR/bin/fslswapdim $dd -x z y $newvol
+		$FSLDIR/bin/fslorient -deleteorient $newvol
+		$FSLDIR/bin/fslorient -setqformcode 1 $newvol
+		mv $dd ./bad_orient1
+	endif
+end
+endif
+
+# step4:
+# if ($step =~ *4* || $step == 0) then
+# 
+# # Step 4: Complex orientation correction (USE WITH CAUTION)
+# # Explanation: The following code (which uses code from Karla Miller) resets the orientation of the
+# # nii volumes to the proper orientation (so A is A, and S is S, etc.)
+# # Note: this code copies the original to a separate directory called 'bad_orient2' just in case something
+# # goes wrong. DON'T USE BOTH STEP 3 AND 4!!!!
+# cd $outdir
+# mkdir -p $PWD/bad_orient2
+# foreach dd (`ls $outdir`)
+# 	# The following code is based on relabel, by Karla Miller - adapted here to avoid calling external functions
+# 	if ($dd != "bad_orient2" ) then
+# 		set newvol=`echo RO$dd`
+# 		echo "Correcting orientation (complex correction) for "$dd
+# 		set currPA=IS
+# 		set currIS=AP
+# 		if ( `echo ${currPA}${currIS} | grep L | wc -l` == 0 ) then
+# 			set currLR=LR 
+# 		endif
+# 		if ( `echo ${currPA}${currIS} | grep A | wc -l` == 0 ) then 
+# 			set currLR=PA 
+# 		endif
+# 		if ( `echo ${currPA}${currIS} | grep S | wc -l` == 0 ) then 
+# 			set currLR=IS 
+# 		endif
+# 		# check if current options preserve handedness or not
+# 		set flip=`$FSLDIR/bin/fslswapdim $dd $currLR $currPA $currIS | grep -i cannot | wc -l`;
+# 		if ( $flip == 1 ) then
+# 			set currLR=`echo $currLR | rev`;  ## is rev POSIX?!?
+# 		endif
+# 		$FSLDIR/bin/fslswapdim $dd $currLR $currPA $currIS $newvol
+# 		set orient=`$FSLDIR/bin/fslorient $newvol | tr 'A-Z' 'a-z'`;
+# 		$FSLDIR/bin/fslorient -deleteorient $newvol
+# 		$FSLDIR/bin/fslorient -setqformcode 1 $newvol
+# 		$FSLDIR/bin/fslorient -force$orient $newvol
+# 		mv $dd ./bad_orient2
+# 	endif
+# end
+# endif
+
+
+
+exit:

@@ -1,0 +1,69 @@
+#!/bin/tcsh
+# @AtlasStructed
+# by AHB, started March 2013
+# Version 1.0
+# Script to generate new Anat/DTI mask based on alignment between structurals from two sessions
+
+if ($#argv < 2) then
+	echo " "
+	echo "*******************************"
+	echo "@AtlasStructed by AHB, V.01.28.2013"
+	echo "*******************************"
+	echo " "
+	echo "INPUT: @AtlasStructed <options>"
+	echo "where: "
+	echo "	-atlas <PREFIX> (mandatory): is the filename of the skull-stripped brain in standard (atlas) space" 
+	echo "	-struct <PREFIX> (mandatory): is the filename of skull-stripped brain in structural (native) space" 
+	echo "	-dti <PREFIX> (mandatory):  is the filename of the skull-stripped brain in DTI space" 
+	echo "  -mask <FILENAME> (mandatory: is the filename of the mask that you'd like to align"
+	echo " "
+	echo "Note: Include fullpaths (if necessary) put not extensions (no *.nii.gz)"
+	goto exit
+endif
+set numarg = `expr $#`
+set cnt = 0
+while ($cnt < $numarg)
+	switch ($1) 
+	case -atlas:
+		set atlas=$2
+		breaksw
+	case -struct:
+		set struct=$2
+		breaksw
+	case -dti:
+		set dti=$2
+		breaksw
+	case -mask:
+		set mask=$2
+		breaksw
+	default:
+		
+	endsw
+	set cnt = `expr $cnt + 1`
+	shift
+end
+
+echo " "
+echo "Standard Volume: "$atlas
+echo "Native Structural: "$struct
+echo "DTI Volume: "$dti
+echo "Mask to align: "$mask
+
+mkdir -p $PWD/temp
+set temp_dir = $PWD/temp
+
+# Step 1 - Align Atlas to Structural:
+flirt -in $atlas -ref $struct -omat $temp_dir/atlas2struct.mat -out $temp_dir/atlas2struct_temp	
+fslview $struct ${temp_dir}/atlas2struct_temp*nii.gz &
+
+# Step 2 - Applyxfm transform to mask to align with struct
+flirt -in $mask -ref $struct -applyxfm -init $temp_dir/atlas2struct.mat -out $temp_dir/mask2struct
+fslview $struct $temp_dir/mask2struct.nii.gz
+
+# Step 3 - Fix mask in struct space
+
+# Step 4 - Align Structural to DTI space
+flirt -in $struct -ref $dti -omat $temp_dir/struct2dti.mat -out ${temp_dir}/struct2dti
+flirt -in $temp_dir/mask2struct -ref $dti -applyxfm -init $temp_dir/struct2dti.mat -out ${mask}_dti
+
+exit:

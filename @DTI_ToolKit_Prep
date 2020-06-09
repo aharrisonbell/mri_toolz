@@ -1,0 +1,86 @@
+#!/bin/tcsh
+# @DTI_ToolKit_Prep
+# by AHB, started August 2012
+set version = 1.21-08-2012
+# Script to prepare DTI data (preprocessed with @DTIScript) for MGH's TrackVis program
+# This script assumes that the data has already been converted from DICOMs and is in the proper
+# orientation. If not, try using @Convert2nii.  This program also assumes you have run the data through
+# the latest version of @(@)DTIScript
+####################################################################################################
+#       SET UP VARIABLES HERE*
+#
+# Directories
+set home_dir = $PWD
+set nii_dir = $PWD/nii_files
+set dti_dir = $PWD/DTI_Data
+set out_dir = $PWD/DTI_ToolKit
+set anat_dir = $PWD/structurals
+set temp_dir = $PWD/temp
+set scriptdir = ~/Documents/fMRI_Data/Oxford_Data/scripts # specifies location of TOPUP, etc.
+#set scriptdir = ~/Desktop/scripts # specifies location of TOPUP, etc.
+set email = "andrew.bell@psy.ox.ac.uk"
+#
+# Standard Atlases
+set mni_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/mni_brain_strip.nii
+set caret_atlas = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/CaretBrain_skullstripped.nii.gz
+#set mni_atlas = /imaging/ab03/mni_brain/mni_brain_strip.nii
+#set caret_atlas = /imaging/ab03/caret_brain/CaretBrain_skullstripped.nii.gz
+set mni_dir = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/mni_brain/
+set caret_dir = ~/Documents/fMRI_Data/Oxford_Data/DicomProcessed/caret_brain/
+#set mni_dir = /imaging/ab03/mni_brain/
+#set caret_dir = /imaging/ab03/caret_brain/
+#
+# Program Options
+set REV_OPTION = "y" # (y/n) - calls up FSLVIEW window after each step (USEFUL!!)
+#
+# *so non-coders, don't f**k with stuff below this section and then complain to me that
+#  the code doesn't work :)
+####################################################################################################
+
+if ($#argv == 0) then
+	echo " "
+	echo "*******************************"
+	echo "@DTI_ToolKit_Prep by AHB, V"$version
+	echo "*******************************"
+	echo " "
+	echo "Script to prepare DTI data for MGH's TrackVis"
+	echo " "
+	echo "INPUT: @DTI_ToolKit_Prep <SESSION> <STEP>"
+	echo " "
+	echo "This script "
+	echo "where:"
+	echo " session_name = Label for data (e.g., MonkeyDate).  This has no impact on the program,"
+	echo "                it simply labels the data in the directory."
+	echo " step (optional): perform step X where..."
+	echo " "
+	goto exit
+endif
+
+set session_name = $1
+if ($#argv == 1) then
+	set step = 0
+else
+	set step = $2
+endif
+mkdir -p $out_dir $temp_dir
+mkdir -p $nii_dir/temp
+
+###################################################################################################
+# Step 1: Extract B0 images from individual DTI volumes
+# Explanation: Each of the (4) DTI volumes (in both PE directions) contain B0 directions, which 
+# must be extracted and merged.  For some reason, the B0 from '8dirs' files are not included.  
+if ($step =~ *1* || $step == 0) then
+	date
+	echo "Step 1: Extract B0 images from individual DTI volumes"
+	cd $nii_dir
+	
+	echo "...Merged file created in "$out_dir
+	if ($REV_OPTION == "y" || $REV_OPTION == "Y") then
+		fslview $out_dir/${session_name}dti_B0s.nii.gz &
+	endif
+	echo "Step 1: Done."
+	echo ${session_name}_dtiscript_part1 | mail -s "@@DTIScript part 1 done" ${email}
+endif
+
+
+exit:
